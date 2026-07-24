@@ -69,8 +69,50 @@ const reportFilename = (extension) => {
   return `aktivlar-hisoboti-${date}.${extension}`;
 };
 
+const loadReportImage = async (imageUrl) => {
+  if (!imageUrl) return null;
+  try {
+    if (imageUrl.startsWith('data:')) {
+      const match = imageUrl.match(/^data:(image\/(?:png|jpe?g|gif));base64,(.+)$/i);
+      if (!match) return null;
+      return {
+        buffer: Buffer.from(match[2], 'base64'),
+        extension: match[1].toLowerCase().includes('png')
+          ? 'png'
+          : match[1].toLowerCase().includes('gif')
+            ? 'gif'
+            : 'jpeg',
+      };
+    }
+    if (!/^https:\/\//i.test(imageUrl)) return null;
+    const response = await fetch(imageUrl, { signal: AbortSignal.timeout(4000) });
+    if (!response.ok) return null;
+    const contentType = response.headers.get('content-type') || '';
+    const extension = contentType.includes('png')
+      ? 'png'
+      : contentType.includes('gif')
+        ? 'gif'
+        : contentType.includes('jpeg') || contentType.includes('jpg')
+          ? 'jpeg'
+          : null;
+    if (!extension) return null;
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return buffer.length <= 2 * 1024 * 1024 ? { buffer, extension } : null;
+  } catch {
+    return null;
+  }
+};
+
+const loadReportImages = async (assets) => {
+  const cache = new Map();
+  await Promise.all([...new Set(assets.map((asset) => asset.imageUrl).filter(Boolean))]
+    .map(async (url) => cache.set(url, await loadReportImage(url))));
+  return new Map(assets.map((asset) => [asset.id, cache.get(asset.imageUrl) || null]));
+};
+
 router.get('/assets.xlsx', asyncHandler(async (req, res) => {
   const { assets, summary, filters } = await buildReport(req.query);
+  const images = await loadReportImages(assets);
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Aktivlarni boshqarish tizimi';
   workbook.created = new Date();
@@ -93,7 +135,8 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
 
   worksheet.columns = [
     { key: 'index', width: 8 },
-    { key: 'name', width: 27 },
+    { key: 'image', width: 12 },
+    { key: 'name', width: 25 },
     { key: 'model', width: 24 },
     { key: 'inventoryNumber', width: 24 },
     { key: 'serialNumber', width: 22 },
@@ -102,20 +145,20 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
     { key: 'assignedUser', width: 29 },
   ];
 
-  worksheet.mergeCells('A1:H2');
+  worksheet.mergeCells('A1:I2');
   const titleCell = worksheet.getCell('A1');
   titleCell.value = 'AKTIVLAR BO‘YICHA HISOBOT';
   titleCell.font = { name: 'Arial', size: 20, bold: true, color: { argb: 'FFFFFFFF' } };
   titleCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173B57' } };
 
-  worksheet.mergeCells('A3:H3');
+  worksheet.mergeCells('A3:I3');
   const metaCell = worksheet.getCell('A3');
   metaCell.value = `Yaratilgan vaqt: ${generatedAt()}`;
   metaCell.font = { name: 'Arial', size: 10, color: { argb: 'FF5B6B7A' }, italic: true };
   metaCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
 
-  worksheet.mergeCells('A4:H4');
+  worksheet.mergeCells('A4:I4');
   const filterCell = worksheet.getCell('A4');
   filterCell.value = `Qo‘llangan filtrlar: ${filters}`;
   filterCell.font = { name: 'Arial', size: 10, color: { argb: 'FF334155' } };
@@ -126,7 +169,7 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
     { range: 'A6:B7', label: 'JAMI AKTIVLAR', value: summary.total, color: 'FF1677FF' },
     { range: 'C6:D7', label: 'FAOL', value: summary.active, color: 'FF2E7D32' },
     { range: 'E6:F7', label: 'NOSOZ', value: summary.broken, color: 'FFF59E0B' },
-    { range: 'G6:H7', label: 'CHIQARILGAN', value: summary.disposed, color: 'FFB42318' },
+    { range: 'G6:I7', label: 'CHIQARILGAN', value: summary.disposed, color: 'FFB42318' },
   ];
   cards.forEach(({ range, label, value, color }) => {
     worksheet.mergeCells(range);
@@ -148,7 +191,7 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
   worksheet.getRow(7).height = 24;
 
   const headerRow = worksheet.getRow(9);
-  headerRow.values = ['№', 'Aktiv nomi', 'Model', 'Inventar raqami', 'Seria raqami', 'Holati', 'Bo‘lim', 'Foydalanuvchi'];
+  headerRow.values = ['№', 'Rasm', 'Aktiv nomi', 'Model', 'Inventar raqami', 'Seria raqami', 'Holati', 'Bo‘lim', 'Foydalanuvchi'];
   headerRow.height = 30;
   headerRow.eachCell((cell) => {
     cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -165,6 +208,7 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
   assets.forEach((asset, index) => {
     const row = worksheet.addRow({
       index: index + 1,
+      image: '',
       name: asset.name,
       model: asset.model || '—',
       inventoryNumber: asset.inventoryNumber,
@@ -173,7 +217,7 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
       department: asset.department?.name || 'Biriktirilmagan',
       assignedUser: asset.assignedUser?.fullName || 'Biriktirilmagan',
     });
-    row.height = 25;
+    row.height = 48;
     row.eachCell((cell, columnNumber) => {
       cell.font = { name: 'Arial', size: 10, color: { argb: 'FF1F2937' } };
       cell.fill = {
@@ -193,7 +237,24 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
         right: { style: 'hair', color: { argb: 'FFD7E0E7' } },
       };
     });
-    const statusCell = row.getCell(6);
+    const reportImage = images.get(asset.id);
+    if (reportImage) {
+      const imageId = workbook.addImage({
+        buffer: reportImage.buffer,
+        extension: reportImage.extension,
+      });
+      worksheet.addImage(imageId, {
+        tl: { col: 1.15, row: row.number - 0.88 },
+        ext: { width: 42, height: 42 },
+        editAs: 'oneCell',
+      });
+    } else {
+      const imageCell = row.getCell(2);
+      imageCell.value = 'Rasm yo‘q';
+      imageCell.font = { name: 'Arial', size: 8, italic: true, color: { argb: 'FF94A3B8' } };
+      imageCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    }
+    const statusCell = row.getCell(7);
     const color = statusColors[asset.status] || { background: 'F1F5F9', text: '334155' };
     statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${color.background}` } };
     statusCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: `FF${color.text}` } };
@@ -201,7 +262,7 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
   });
 
   if (assets.length === 0) {
-    worksheet.mergeCells('A10:H11');
+    worksheet.mergeCells('A10:I11');
     const emptyCell = worksheet.getCell('A10');
     emptyCell.value = 'Tanlangan filtrlarga mos aktiv topilmadi';
     emptyCell.font = { name: 'Arial', size: 12, italic: true, color: { argb: 'FF64748B' } };
@@ -209,8 +270,8 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
   }
 
   const lastRow = Math.max(9, worksheet.lastRow.number);
-  worksheet.autoFilter = { from: 'A9', to: `H${lastRow}` };
-  worksheet.pageSetup.printArea = `A1:H${lastRow}`;
+  worksheet.autoFilter = { from: 'A9', to: `I${lastRow}` };
+  worksheet.pageSetup.printArea = `A1:I${lastRow}`;
   worksheet.headerFooter.oddFooter = '&L Aktivlarni boshqarish tizimi&C Maxfiy xizmat hujjati&R Sahifa &P / &N';
   worksheet.headerFooter.oddHeader = '&L&B Aktivlar hisoboti&R&D &T';
 
@@ -231,6 +292,7 @@ const truncate = (value, length) => {
 
 router.get('/assets.pdf', asyncHandler(async (req, res) => {
   const { assets, summary, filters } = await buildReport(req.query);
+  const images = await loadReportImages(assets);
   const document = new PDFDocument({
     size: 'A4',
     layout: 'landscape',
@@ -291,13 +353,14 @@ router.get('/assets.pdf', asyncHandler(async (req, res) => {
 
   const columns = [
     { label: '#', key: 'index', width: 28, align: 'center' },
-    { label: 'AKTIV NOMI', key: 'name', width: 108 },
-    { label: 'MODEL', key: 'model', width: 94 },
-    { label: 'INVENTAR RAQAMI', key: 'inventoryNumber', width: 112 },
-    { label: 'SERIA RAQAMI', key: 'serialNumber', width: 96 },
-    { label: 'HOLATI', key: 'status', width: 78, align: 'center' },
-    { label: "BO'LIM", key: 'department', width: 105 },
-    { label: 'FOYDALANUVCHI', key: 'assignedUser', width: contentWidth - 621 },
+    { label: 'RASM', key: 'image', width: 54, align: 'center' },
+    { label: 'AKTIV NOMI', key: 'name', width: 90 },
+    { label: 'MODEL', key: 'model', width: 82 },
+    { label: 'INVENTAR RAQAMI', key: 'inventoryNumber', width: 100 },
+    { label: 'SERIA RAQAMI', key: 'serialNumber', width: 84 },
+    { label: 'HOLATI', key: 'status', width: 76, align: 'center' },
+    { label: "BO'LIM", key: 'department', width: 95 },
+    { label: 'FOYDALANUVCHI', key: 'assignedUser', width: contentWidth - 609 },
   ];
 
   const drawTableHeader = (y) => {
@@ -323,7 +386,7 @@ router.get('/assets.pdf', asyncHandler(async (req, res) => {
   }
 
   assets.forEach((asset, index) => {
-    const rowHeight = 32;
+    const rowHeight = 46;
     if (y + rowHeight > pageHeight - 48) {
       document.addPage();
       drawPageBrand(true);
@@ -335,6 +398,7 @@ router.get('/assets.pdf', asyncHandler(async (req, res) => {
 
     const row = {
       index: index + 1,
+      image: '',
       name: truncate(asset.name, 24),
       model: truncate(asset.model, 20),
       inventoryNumber: truncate(asset.inventoryNumber, 24),
@@ -345,18 +409,37 @@ router.get('/assets.pdf', asyncHandler(async (req, res) => {
     };
     let x = left;
     columns.forEach((column) => {
-      if (column.key === 'status') {
+      if (column.key === 'image') {
+        const reportImage = images.get(asset.id);
+        if (reportImage && ['jpeg', 'png'].includes(reportImage.extension)) {
+          try {
+            document.image(reportImage.buffer, x + 9, y + 5, {
+              fit: [36, 36],
+              align: 'center',
+              valign: 'center',
+            });
+          } catch {
+            document.roundedRect(x + 10, y + 8, 34, 30, 4).fill(colors.pale);
+            document.fillColor(colors.muted).font('Helvetica').fontSize(6)
+              .text('Rasm yoq', x + 11, y + 20, { width: 32, align: 'center' });
+          }
+        } else {
+          document.roundedRect(x + 10, y + 8, 34, 30, 4).fill(colors.pale);
+          document.fillColor(colors.muted).font('Helvetica').fontSize(6)
+            .text('Rasm yoq', x + 11, y + 20, { width: 32, align: 'center' });
+        }
+      } else if (column.key === 'status') {
         const statusColor = statusColors[asset.status] || { background: 'F1F5F9', text: '334155' };
-        document.roundedRect(x + 5, y + 7, column.width - 10, 18, 8).fill(`#${statusColor.background}`);
+        document.roundedRect(x + 5, y + 14, column.width - 10, 18, 8).fill(`#${statusColor.background}`);
         document.fillColor(`#${statusColor.text}`).font('Helvetica-Bold').fontSize(7)
-          .text(pdfSafe(row[column.key]), x + 7, y + 12, {
+          .text(pdfSafe(row[column.key]), x + 7, y + 19, {
             width: column.width - 14,
             align: 'center',
             lineBreak: false,
           });
       } else {
         document.fillColor('#1F2937').font(column.key === 'name' ? 'Helvetica-Bold' : 'Helvetica').fontSize(8)
-          .text(pdfSafe(row[column.key]), x + 5, y + 11, {
+          .text(pdfSafe(row[column.key]), x + 5, y + 18, {
             width: column.width - 10,
             align: column.align || 'left',
             lineBreak: false,
