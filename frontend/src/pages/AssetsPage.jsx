@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircleFilled, DeleteOutlined, EditOutlined, ExclamationCircleFilled, MinusCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, StopFilled, UploadOutlined } from '@ant-design/icons';
-import { Button, Card, Form, Image, Input, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
+import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
+import SafeImage from '../components/SafeImage.jsx';
 
 const statusOptions = [
   { value: 'ACTIVE', label: 'Faol / foydalanishga tayyor' },
@@ -104,7 +105,7 @@ export default function AssetsPage() {
   const imageButton = (form) => <Upload accept="image/*" maxCount={1} customRequest={uploadImage(form)} showUploadList={{ showRemoveIcon: false }}><Button icon={<UploadOutlined />}>Kompyuterdan rasm tanlash</Button></Upload>;
   const userSelect = (departmentId) => <Select allowClear placeholder="Foydalanuvchini tanlang" options={availableUsers(departmentId)} />;
   const columns = [
-    { title: 'Rasm', dataIndex: 'imageUrl', width: 74, render: (url) => url ? <Image src={url} width={44} height={44} preview={false} style={{ objectFit: 'cover' }} /> : '-' },
+    { title: 'Rasm', dataIndex: 'imageUrl', width: 74, render: (url) => <SafeImage src={url} /> },
     { title: 'Nomi', dataIndex: 'name', render: (text, row) => <Link to={`/assets/${row.id}`}>{text}</Link> },
     { title: 'Model', dataIndex: 'model' }, { title: 'Inventar raqami', dataIndex: 'inventoryNumber' }, { title: 'Seria raqami', dataIndex: 'serialNumber' },
     { title: 'Bo‘lim', render: (row) => row.department?.name || '-' }, { title: 'Holat', dataIndex: 'status', width: 160, render: (status) => <AssetStatus status={status} /> },

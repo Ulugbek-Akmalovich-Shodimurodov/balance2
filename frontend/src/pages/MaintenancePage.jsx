@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PlusOutlined, ReloadOutlined, SearchOutlined, ToolOutlined } from '@ant-design/icons';
-import { Button, Card, Form, Image, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd';
+import { Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
+import SafeImage from '../components/SafeImage.jsx';
 
 const labels = { NEW: 'Yangi so‘rov', IN_PROGRESS: 'Jarayonda', REPAIRED: 'Tuzatildi', REPLACED: 'Almashtirildi', WAREHOUSED: 'Omborxonada' };
 const colors = { NEW: 'red', IN_PROGRESS: 'orange', REPAIRED: 'green', REPLACED: 'blue', WAREHOUSED: 'purple' };
@@ -74,7 +75,7 @@ export default function MaintenancePage() {
   };
 
   const columns = [
-    { title: 'Rasm', width: 70, render: (row) => row.asset?.imageUrl ? <Image src={row.asset.imageUrl} width={42} height={42} preview={false} style={{ objectFit: 'cover', borderRadius: 6 }} /> : <span>—</span> },
+    { title: 'Rasm', width: 70, render: (row) => <SafeImage src={row.asset?.imageUrl} width={42} height={42} /> },
     { title: 'Qurilma', width: 150, render: (row) => row.asset ? <Link to={`/assets/${row.asset.id}`}>{row.asset.name}</Link> : '—' },
     { title: 'Model', width: 160, render: (row) => row.asset?.model || '—' },
     { title: 'Inventar raqami', width: 145, render: (row) => row.asset?.inventoryNumber || '—' },

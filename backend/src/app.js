@@ -5,7 +5,6 @@ import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import { env } from './config/env.js';
 import { errorHandler } from './middlewares/errorHandler.js';
-import { uploadsRoot } from './middlewares/upload.js';
 import routes from './routes/index.js';
 
 const app = express();
@@ -19,8 +18,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, skip: () => env.nodeEnv === 'development' }));
-app.use(express.json());
-app.use('/uploads', express.static(uploadsRoot));
+app.use(express.json({ limit: '3mb' }));
 app.use(morgan('combined'));
 app.use('/api', routes);
 app.get('/health', (_, res) => res.json({ ok: true }));

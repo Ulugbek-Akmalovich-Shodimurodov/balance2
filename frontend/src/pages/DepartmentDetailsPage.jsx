@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { ApartmentOutlined, BankOutlined, CheckCircleFilled, EditOutlined, ExclamationCircleFilled, LaptopOutlined, StopFilled } from '@ant-design/icons';
-import { Button, Card, Empty, Form, Image, Modal, Select, Table, Tag, Typography, message } from 'antd';
+import { Button, Card, Empty, Form, Modal, Select, Table, Tag, Typography, message } from 'antd';
 import { Link, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { api } from '../api/client.js';
+import SafeImage from '../components/SafeImage.jsx';
 
 const statusInfo = {
   ACTIVE: { label: 'Faol', icon: CheckCircleFilled, className: 'asset-status-active' },
@@ -37,7 +38,7 @@ export default function DepartmentDetailsPage() {
   };
 
   const assetColumns = [
-    { title: 'Rasm', dataIndex: 'imageUrl', width: 72, render: (url) => url ? <Image src={url} width={42} height={42} preview={false} style={{ objectFit: 'cover' }} /> : <LaptopOutlined /> },
+    { title: 'Rasm', dataIndex: 'imageUrl', width: 72, render: (url) => <SafeImage src={url} width={42} height={42} /> },
     { title: 'Qurilma', dataIndex: 'name', render: (name, asset) => <Link to={`/assets/${asset.id}`}>{name}</Link> },
     { title: 'Model', dataIndex: 'model' }, { title: 'Inventar raqami', dataIndex: 'inventoryNumber' }, { title: 'Seria raqami', dataIndex: 'serialNumber' },
     { title: 'Holat', dataIndex: 'status', width: 160, render: (status) => <AssetStatus status={status} /> },

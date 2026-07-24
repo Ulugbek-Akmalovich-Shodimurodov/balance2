@@ -6,14 +6,11 @@ import {
   ReloadOutlined,
   SearchOutlined,
   UploadOutlined,
-  UserOutlined,
 } from '@ant-design/icons';
 import {
-  Avatar,
   Button,
   Card,
   Form,
-  Image,
   Input,
   Modal,
   Popconfirm,
@@ -27,6 +24,7 @@ import {
 } from 'antd';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
+import SafeImage from '../components/SafeImage.jsx';
 
 const roleOptions = [
   { value: 'ADMIN', label: 'Administrator' },
@@ -183,9 +181,7 @@ export default function UsersPage() {
       title: 'Rasm',
       dataIndex: 'imageUrl',
       width: 72,
-      render: (url) => url
-        ? <Image src={url} width={42} height={42} preview={false} style={{ objectFit: 'cover', borderRadius: '50%' }} />
-        : <Avatar icon={<UserOutlined />} />,
+      render: (url) => <SafeImage src={url} width={42} height={42} rounded user />,
     },
     { title: 'ID', dataIndex: 'id', width: 70 },
     {
