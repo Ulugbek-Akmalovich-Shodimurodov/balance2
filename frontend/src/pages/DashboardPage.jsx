@@ -45,9 +45,9 @@ export default function DashboardPage() {
   }, []);
 
   const statusData = useMemo(() => [
-    { name: 'Faol', value: stats.active || 0, color: '#36B878', shadow: '#1D704A', gradient: 'activeGradient' },
-    { name: 'Nosoz', value: stats.broken || 0, color: '#F0B12F', shadow: '#A97009', gradient: 'brokenGradient' },
-    { name: 'Chiqarilgan', value: stats.disposed || 0, color: '#E26060', shadow: '#9E3434', gradient: 'disposedGradient' },
+    { name: 'Faol', value: stats.active || 0, color: '#42C95F', shadow: '#19763A', gradient: 'activeGradient' },
+    { name: 'Nosoz', value: stats.broken || 0, color: '#FFD429', shadow: '#B27A00', gradient: 'brokenGradient' },
+    { name: 'Chiqarilgan', value: stats.disposed || 0, color: '#F04E59', shadow: '#9B202C', gradient: 'disposedGradient' },
   ], [stats]);
 
   const departmentData = (stats.perDepartment || []).slice(0, 7);
@@ -149,32 +149,37 @@ export default function DashboardPage() {
             title={<div><strong>Aktivlar holati</strong><small>Joriy holat bo‘yicha taqsimot</small></div>}
           >
             <div className="dashboard-donut">
-              <ResponsiveContainer width="100%" height={260}>
+              <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
                   <defs>
-                    <linearGradient id="activeGradient" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%" stopColor="#54CC8D" />
-                      <stop offset="100%" stopColor="#258F5D" />
+                    <linearGradient id="activeGradient" x1="0" y1="0" x2="0.8" y2="1">
+                      <stop offset="0%" stopColor="#A4F087" />
+                      <stop offset="42%" stopColor="#4FD267" />
+                      <stop offset="100%" stopColor="#20A447" />
                     </linearGradient>
-                    <linearGradient id="brokenGradient" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%" stopColor="#FFD264" />
-                      <stop offset="100%" stopColor="#D89412" />
+                    <linearGradient id="brokenGradient" x1="0" y1="0" x2="0.8" y2="1">
+                      <stop offset="0%" stopColor="#FFF39A" />
+                      <stop offset="42%" stopColor="#FFDC3E" />
+                      <stop offset="100%" stopColor="#E6A900" />
                     </linearGradient>
-                    <linearGradient id="disposedGradient" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%" stopColor="#F07A7A" />
-                      <stop offset="100%" stopColor="#BE4444" />
+                    <linearGradient id="disposedGradient" x1="0" y1="0" x2="0.8" y2="1">
+                      <stop offset="0%" stopColor="#FF9A9F" />
+                      <stop offset="42%" stopColor="#F45B64" />
+                      <stop offset="100%" stopColor="#C92D3A" />
                     </linearGradient>
                     <filter id="donut3dShadow" x="-30%" y="-30%" width="160%" height="180%">
-                      <feDropShadow dx="0" dy="7" stdDeviation="6" floodColor="#173b57" floodOpacity=".24" />
+                      <feDropShadow dx="0" dy="9" stdDeviation="7" floodColor="#102a43" floodOpacity=".32" />
                     </filter>
                   </defs>
                   <Pie
                     data={statusData}
                     dataKey="value"
-                    innerRadius={75}
-                    outerRadius={105}
-                    cy="51%"
-                    paddingAngle={4}
+                    innerRadius={0}
+                    outerRadius={108}
+                    cy="54%"
+                    paddingAngle={2}
+                    startAngle={90}
+                    endAngle={-270}
                     stroke="none"
                     isAnimationActive={false}
                   >
@@ -183,22 +188,19 @@ export default function DashboardPage() {
                   <Pie
                     data={statusData}
                     dataKey="value"
-                    innerRadius={75}
-                    outerRadius={105}
+                    innerRadius={0}
+                    outerRadius={108}
                     cy="48%"
-                    paddingAngle={4}
-                    stroke="none"
+                    paddingAngle={2}
+                    startAngle={90}
+                    endAngle={-270}
+                    stroke="#ffffff"
+                    strokeWidth={4}
                     style={{ filter: 'url(#donut3dShadow)' }}
                   >
                     {statusData.map((item) => <Cell key={item.name} fill={`url(#${item.gradient})`} />)}
                   </Pie>
                   <Tooltip formatter={(value, name) => [numberFormatter.format(value), name]} />
-                  <text x="50%" y="44%" textAnchor="middle" className="dashboard-donut-value">
-                    {stats.total || 0}
-                  </text>
-                  <text x="50%" y="53%" textAnchor="middle" className="dashboard-donut-label">
-                    jami aktiv
-                  </text>
                 </PieChart>
               </ResponsiveContainer>
               <div className="dashboard-legend">
