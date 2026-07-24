@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircleFilled, DeleteOutlined, EditOutlined, ExclamationCircleFilled, MinusCircleOutlined, PlusOutlined, StopFilled, UploadOutlined } from '@ant-design/icons';
+import { CheckCircleFilled, DeleteOutlined, EditOutlined, ExclamationCircleFilled, MinusCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, StopFilled, UploadOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Image, Input, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
@@ -26,11 +26,13 @@ export default function AssetsPage() {
   const [data, setData] = useState({ items: [], total: 0 });
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [assetTypes, setAssetTypes] = useState([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
   const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const [filters, setFilters] = useState({ page: 1, limit: 10 });
+  const [searchInput, setSearchInput] = useState('');
   const [baseInventory, setBaseInventory] = useState('');
   const createDepartmentId = Form.useWatch('departmentId', createForm);
   const editDepartmentId = Form.useWatch('departmentId', editForm);
@@ -40,7 +42,14 @@ export default function AssetsPage() {
   useEffect(() => {
     api.get('/users').then((response) => setUsers(response.data));
     api.get('/departments').then((response) => setDepartments(response.data));
+    api.get('/assets/types').then((response) => setAssetTypes(response.data));
   }, []);
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setFilters((current) => ({ ...current, search: searchInput.trim() || undefined, page: 1 }));
+    }, 350);
+    return () => clearTimeout(timeout);
+  }, [searchInput]);
 
   const departmentById = (id) => departments.find((department) => department.id === id);
   const isWarehouse = (id) => departmentById(id)?.name?.trim().toLocaleLowerCase() === 'omborxona';
@@ -48,6 +57,14 @@ export default function AssetsPage() {
     .filter((user) => !departmentId || user.department?.id === departmentId)
     .map((user) => ({ value: user.id, label: user.fullName }));
   const departmentOptions = departments.map((department) => ({ value: department.id, label: department.name }));
+  const assetTypeOptions = assetTypes.map((type) => ({ value: type.id, label: type.name }));
+  const userOptions = users.map((user) => ({ value: user.id, label: user.fullName }));
+  const hasFilters = Boolean(searchInput || filters.status || filters.departmentId || filters.assetTypeId || filters.assignedUserId || filters.assignment);
+  const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value, page: 1 }));
+  const resetFilters = () => {
+    setSearchInput('');
+    setFilters((current) => ({ page: 1, limit: current.limit }));
+  };
 
   const uploadImage = (form) => async ({ file, onSuccess, onError }) => {
     const body = new FormData(); body.append('image', file);
@@ -97,7 +114,105 @@ export default function AssetsPage() {
 
   return <>
     <Space className="page-head"><Typography.Title level={2}>Aktivlar</Typography.Title><Button type="primary" onClick={() => setCreateOpen(true)}>Qurilma qo‘shish</Button></Space>
-    <Card><Input.Search placeholder="Nomi, modeli, inventar yoki seria raqami bo‘yicha qidirish" onSearch={(search) => setFilters({ ...filters, search, page: 1 })} style={{ marginBottom: 16, maxWidth: 420 }} /><Table rowKey="id" dataSource={data.items} columns={columns} pagination={{ total: data.total, current: filters.page, pageSize: filters.limit, onChange: (page, limit) => setFilters({ ...filters, page, limit }) }} /></Card>
+    <Card>
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Space wrap style={{ width: '100%' }}>
+          <Input
+            allowClear
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            prefix={<SearchOutlined />}
+            placeholder="Nomi, model, inventar yoki seria raqami bo‘yicha qidirish"
+            style={{ width: 360, maxWidth: '100%' }}
+          />
+          <Select
+            allowClear
+            value={filters.status}
+            onChange={(value) => updateFilter('status', value)}
+            placeholder="Barcha holatlar"
+            options={statusOptions}
+            style={{ width: 220 }}
+          />
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            value={filters.departmentId}
+            onChange={(value) => updateFilter('departmentId', value)}
+            placeholder="Barcha bo‘limlar"
+            options={departmentOptions}
+            style={{ width: 210 }}
+          />
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            value={filters.assetTypeId}
+            onChange={(value) => updateFilter('assetTypeId', value)}
+            placeholder="Barcha aktiv turlari"
+            options={assetTypeOptions}
+            style={{ width: 200 }}
+          />
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            value={filters.assignedUserId}
+            onChange={(value) => {
+              setFilters((current) => ({
+                ...current,
+                assignedUserId: value,
+                assignment: value ? undefined : current.assignment,
+                page: 1,
+              }));
+            }}
+            placeholder="Barcha foydalanuvchilar"
+            options={userOptions}
+            style={{ width: 220 }}
+          />
+          <Select
+            allowClear
+            value={filters.assignment}
+            onChange={(value) => {
+              setFilters((current) => ({
+                ...current,
+                assignment: value,
+                assignedUserId: value ? undefined : current.assignedUserId,
+                page: 1,
+              }));
+            }}
+            placeholder="Biriktirish holati"
+            options={[
+              { value: 'assigned', label: 'Foydalanuvchiga biriktirilgan' },
+              { value: 'unassigned', label: 'Biriktirilmagan' },
+            ]}
+            style={{ width: 230 }}
+          />
+          <Button icon={<ReloadOutlined />} onClick={resetFilters} disabled={!hasFilters}>
+            Filtrlarni tozalash
+          </Button>
+        </Space>
+        <Typography.Text type="secondary">
+          {hasFilters ? `${data.total} ta natija topildi` : `Jami ${data.total} ta aktiv`}
+        </Typography.Text>
+        <Table
+          rowKey="id"
+          dataSource={data.items}
+          columns={columns}
+          scroll={{ x: 1250 }}
+          locale={{ emptyText: hasFilters ? 'Filtrlarga mos aktiv topilmadi' : 'Aktivlar mavjud emas' }}
+          pagination={{
+            total: data.total,
+            current: filters.page,
+            pageSize: filters.limit,
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50],
+            showTotal: (total, range) => `${range[0]}–${range[1]} / ${total}`,
+            onChange: (page, limit) => setFilters({ ...filters, page, limit }),
+          }}
+        />
+      </Space>
+    </Card>
     <Modal title="Qurilmalarni qo‘shish" open={createOpen} onCancel={closeCreate} onOk={() => createForm.submit()} width={760} okText="Saqlash">
       <Form form={createForm} layout="vertical" onFinish={createAssets} initialValues={{ items: [{ serialNumber: '' }], status: 'ACTIVE' }}>
         <Form.Item name="name" label="Nomi" rules={[{ required: true, message: 'Qurilma nomini kiriting' }]}><Input placeholder="Masalan: Printer" /></Form.Item>
