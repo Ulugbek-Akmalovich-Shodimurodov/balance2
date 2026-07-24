@@ -1,0 +1,15 @@
+node_modules/
+**/node_modules/
+
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+dist/
+**/dist/
+
+*.log
+npm-debug.log*
+
+backend/uploads/
