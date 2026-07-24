@@ -6,7 +6,9 @@ import multer from 'multer';
 import { ApiError } from '../utils/apiError.js';
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
-export const uploadsRoot = path.resolve(currentDirectory, '../../uploads');
+export const uploadsRoot = process.env.VERCEL
+  ? path.join('/tmp', 'uploads')
+  : path.resolve(currentDirectory, '../../uploads');
 const assetsDirectory = path.join(uploadsRoot, 'assets');
 fs.mkdirSync(assetsDirectory, { recursive: true });
 
