@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   AppstoreOutlined,
   DatabaseOutlined,
   LockOutlined,
   SafetyCertificateOutlined,
+  SyncOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { Button, Card, Form, Input, Typography, message } from 'antd';
@@ -16,11 +17,36 @@ export default function LoginPage() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [captchaLoading, setCaptchaLoading] = useState(false);
+  const [captcha, setCaptcha] = useState();
+  const [form] = Form.useForm();
+
+  const loadCaptcha = useCallback(async () => {
+    setCaptchaLoading(true);
+    try {
+      const { data } = await api.get('/auth/captcha');
+      setCaptcha(data);
+      form.setFieldValue('captchaAnswer', '');
+    } catch {
+      message.error('CAPTCHA yuklanmadi. Sahifani yangilang.');
+    } finally {
+      setCaptchaLoading(false);
+    }
+  }, [form]);
+
+  useEffect(() => { loadCaptcha(); }, [loadCaptcha]);
 
   const onFinish = async (values) => {
+    if (!captcha?.captchaToken) {
+      message.error('CAPTCHA tayyor emas. Uni yangilang.');
+      return;
+    }
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/login', values);
+      const { data } = await api.post('/auth/login', {
+        ...values,
+        captchaToken: captcha.captchaToken,
+      });
       dispatch(setCredentials(data));
       message.success(`Xush kelibsiz, ${data.user.fullName}`);
       navigate('/');
@@ -30,6 +56,7 @@ export default function LoginPage() {
       } else {
         message.error(error.response?.data?.message || 'Login yoki parol noto‘g‘ri');
       }
+      loadCaptcha();
     } finally {
       setLoading(false);
     }
@@ -78,7 +105,7 @@ export default function LoginPage() {
               Davom etish uchun hisob ma’lumotlaringizni kiriting.
             </Typography.Paragraph>
 
-            <Form layout="vertical" onFinish={onFinish} requiredMark={false} size="large">
+            <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false} size="large">
               <Form.Item
                 name="login"
                 label="Login"
@@ -101,6 +128,39 @@ export default function LoginPage() {
                   placeholder="Parolingiz"
                   autoComplete="current-password"
                 />
+              </Form.Item>
+              <Form.Item
+                label="Xavfsizlik kodi"
+              >
+                <div className="captcha-field">
+                  <div className="captcha-image-wrap">
+                    {captcha?.image
+                      ? <img src={captcha.image} alt="CAPTCHA xavfsizlik kodi" />
+                      : <span>Yuklanmoqda...</span>}
+                  </div>
+                  <Button
+                    type="default"
+                    icon={<SyncOutlined spin={captchaLoading} />}
+                    onClick={loadCaptcha}
+                    loading={captchaLoading}
+                    aria-label="CAPTCHA kodini yangilash"
+                  />
+                  <Form.Item
+                    name="captchaAnswer"
+                    noStyle
+                    rules={[
+                      { required: true, message: 'Rasmdagi kodni kiriting' },
+                      { len: 5, message: 'Kod 5 ta belgidan iborat' },
+                    ]}
+                  >
+                    <Input
+                      placeholder="Rasmdagi kod"
+                      maxLength={5}
+                      autoComplete="off"
+                      onInput={(event) => { event.currentTarget.value = event.currentTarget.value.toUpperCase(); }}
+                    />
+                  </Form.Item>
+                </div>
               </Form.Item>
               <Button
                 type="primary"
