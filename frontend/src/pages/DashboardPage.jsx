@@ -45,9 +45,9 @@ export default function DashboardPage() {
   }, []);
 
   const statusData = useMemo(() => [
-    { name: 'Faol', value: stats.active || 0, color: '#25A56A' },
-    { name: 'Nosoz', value: stats.broken || 0, color: '#F0A320' },
-    { name: 'Chiqarilgan', value: stats.disposed || 0, color: '#E05454' },
+    { name: 'Faol', value: stats.active || 0, color: '#36B878', shadow: '#1D704A', gradient: 'activeGradient' },
+    { name: 'Nosoz', value: stats.broken || 0, color: '#F0B12F', shadow: '#A97009', gradient: 'brokenGradient' },
+    { name: 'Chiqarilgan', value: stats.disposed || 0, color: '#E26060', shadow: '#9E3434', gradient: 'disposedGradient' },
   ], [stats]);
 
   const departmentData = (stats.perDepartment || []).slice(0, 7);
@@ -151,21 +151,52 @@ export default function DashboardPage() {
             <div className="dashboard-donut">
               <ResponsiveContainer width="100%" height={260}>
                 <PieChart>
+                  <defs>
+                    <linearGradient id="activeGradient" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#54CC8D" />
+                      <stop offset="100%" stopColor="#258F5D" />
+                    </linearGradient>
+                    <linearGradient id="brokenGradient" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#FFD264" />
+                      <stop offset="100%" stopColor="#D89412" />
+                    </linearGradient>
+                    <linearGradient id="disposedGradient" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#F07A7A" />
+                      <stop offset="100%" stopColor="#BE4444" />
+                    </linearGradient>
+                    <filter id="donut3dShadow" x="-30%" y="-30%" width="160%" height="180%">
+                      <feDropShadow dx="0" dy="7" stdDeviation="6" floodColor="#173b57" floodOpacity=".24" />
+                    </filter>
+                  </defs>
                   <Pie
                     data={statusData}
                     dataKey="value"
                     innerRadius={75}
                     outerRadius={105}
+                    cy="51%"
                     paddingAngle={4}
                     stroke="none"
+                    isAnimationActive={false}
                   >
-                    {statusData.map((item) => <Cell key={item.name} fill={item.color} />)}
+                    {statusData.map((item) => <Cell key={`shadow-${item.name}`} fill={item.shadow} />)}
+                  </Pie>
+                  <Pie
+                    data={statusData}
+                    dataKey="value"
+                    innerRadius={75}
+                    outerRadius={105}
+                    cy="48%"
+                    paddingAngle={4}
+                    stroke="none"
+                    style={{ filter: 'url(#donut3dShadow)' }}
+                  >
+                    {statusData.map((item) => <Cell key={item.name} fill={`url(#${item.gradient})`} />)}
                   </Pie>
                   <Tooltip formatter={(value, name) => [numberFormatter.format(value), name]} />
-                  <text x="50%" y="47%" textAnchor="middle" className="dashboard-donut-value">
+                  <text x="50%" y="44%" textAnchor="middle" className="dashboard-donut-value">
                     {stats.total || 0}
                   </text>
-                  <text x="50%" y="56%" textAnchor="middle" className="dashboard-donut-label">
+                  <text x="50%" y="53%" textAnchor="middle" className="dashboard-donut-label">
                     jami aktiv
                   </text>
                 </PieChart>
@@ -174,7 +205,7 @@ export default function DashboardPage() {
                 {statusData.map((item) => (
                   <div key={item.name}>
                     <span style={{ background: item.color }} />
-                    <Typography.Text>{item.name}</Typography.Text>
+                    <span className="dashboard-legend-label">{item.name}</span>
                     <strong>{item.value}</strong>
                   </div>
                 ))}
