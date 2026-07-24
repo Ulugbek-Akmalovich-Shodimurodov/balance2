@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { PlusOutlined, ToolOutlined } from '@ant-design/icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import { PlusOutlined, ReloadOutlined, SearchOutlined, ToolOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Image, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
@@ -16,6 +16,10 @@ export default function MaintenancePage() {
   const [warehouse, setWarehouse] = useState([]);
   const [reportOpen, setReportOpen] = useState(false);
   const [actionItem, setActionItem] = useState(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState();
+  const [departmentFilter, setDepartmentFilter] = useState();
+  const [assetStatusFilter, setAssetStatusFilter] = useState();
   const [reportForm] = Form.useForm();
   const [actionForm] = Form.useForm();
   const status = Form.useWatch('status', actionForm);
@@ -27,6 +31,27 @@ export default function MaintenancePage() {
   };
 
   useEffect(() => { load(); }, [isAdmin]);
+
+  const departmentOptions = [...new Map(items
+    .filter((item) => item.asset?.department)
+    .map((item) => [item.asset.department.id, { value: item.asset.department.id, label: item.asset.department.name }]))
+    .values()];
+  const needle = search.trim().toLocaleLowerCase('uz');
+  const filteredItems = useMemo(() => items.filter((item) => {
+    const matchesSearch = !needle || [
+      item.asset?.name,
+      item.asset?.model,
+      item.asset?.inventoryNumber,
+      item.asset?.serialNumber,
+      item.asset?.assignedUser?.fullName,
+      item.title,
+    ].some((value) => value?.toLocaleLowerCase('uz').includes(needle));
+    return matchesSearch
+      && (!statusFilter || (item.status || 'NEW') === statusFilter)
+      && (!departmentFilter || item.asset?.department?.id === departmentFilter)
+      && (!assetStatusFilter || item.asset?.status === assetStatusFilter);
+  }), [items, needle, statusFilter, departmentFilter, assetStatusFilter]);
+  const hasFilters = Boolean(search || statusFilter || departmentFilter || assetStatusFilter);
 
   const report = async (values) => {
     try {
@@ -84,7 +109,70 @@ export default function MaintenancePage() {
       </div>
       {!isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => setReportOpen(true)}>Nosozlik haqida xabar berish</Button>}
     </Space>
-    <Card><Table rowKey="id" dataSource={items} columns={columns} scroll={{ x: 1500 }} /></Card>
+    <Card>
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Space wrap>
+          <Input
+            allowClear
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            prefix={<SearchOutlined />}
+            placeholder="Qurilma, inventar, foydalanuvchi yoki muammo bo‘yicha qidirish"
+            style={{ width: 380, maxWidth: '100%' }}
+          />
+          <Select
+            allowClear
+            value={statusFilter}
+            onChange={setStatusFilter}
+            placeholder="Barcha jarayonlar"
+            options={Object.entries(labels).map(([value, label]) => ({ value, label }))}
+            style={{ width: 200 }}
+          />
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            value={departmentFilter}
+            onChange={setDepartmentFilter}
+            placeholder="Barcha bo‘limlar"
+            options={departmentOptions}
+            style={{ width: 210 }}
+          />
+          <Select
+            allowClear
+            value={assetStatusFilter}
+            onChange={setAssetStatusFilter}
+            placeholder="Qurilma holati"
+            options={[
+              { value: 'ACTIVE', label: 'Faol' },
+              { value: 'BROKEN', label: 'Nosoz' },
+              { value: 'DISPOSED', label: 'Foydalanishdan chiqarilgan' },
+            ]}
+            style={{ width: 220 }}
+          />
+          <Button
+            icon={<ReloadOutlined />}
+            disabled={!hasFilters}
+            onClick={() => { setSearch(''); setStatusFilter(undefined); setDepartmentFilter(undefined); setAssetStatusFilter(undefined); }}
+          >
+            Filtrlarni tozalash
+          </Button>
+        </Space>
+        <Typography.Text type="secondary">
+          {hasFilters
+            ? `${filteredItems.length} ta natija topildi (jami ${items.length})`
+            : `Jami ${items.length} ta texnik xizmat yozuvi`}
+        </Typography.Text>
+        <Table
+          rowKey="id"
+          dataSource={filteredItems}
+          columns={columns}
+          scroll={{ x: 1500 }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50], showTotal: (total, range) => `${range[0]}–${range[1]} / ${total}` }}
+          locale={{ emptyText: hasFilters ? 'Filtrlarga mos texnik xizmat yozuvi topilmadi' : 'Texnik xizmat yozuvlari mavjud emas' }}
+        />
+      </Space>
+    </Card>
     <Modal title="Nosozlik haqida xabar berish" open={reportOpen} onCancel={() => setReportOpen(false)} onOk={() => reportForm.submit()}>
       <Form form={reportForm} layout="vertical" onFinish={report}>
         <Form.Item name="assetId" label="Qurilma" rules={[{ required: true }]}><Select options={assets.map((asset) => ({ value: asset.id, label: `${asset.name} — ${asset.inventoryNumber}` }))} /></Form.Item>
