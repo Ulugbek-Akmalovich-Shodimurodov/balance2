@@ -13,19 +13,23 @@ import {
 import { Button, Card, Col, Progress, Row, Space, Table, Tag, Typography } from 'antd';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
+import ReactEChartsCore from 'echarts-for-react/lib/core';
+import * as echarts from 'echarts/core';
+import { PieChart as EChartsPieChart } from 'echarts/charts';
+import { GraphicComponent, TooltipComponent } from 'echarts/components';
+import { SVGRenderer } from 'echarts/renderers';
 import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
 import { api } from '../api/client.js';
+
+echarts.use([EChartsPieChart, GraphicComponent, TooltipComponent, SVGRenderer]);
 
 const statusMeta = {
   ACTIVE: { label: 'Faol', color: 'green' },
@@ -45,10 +49,101 @@ export default function DashboardPage() {
   }, []);
 
   const statusData = useMemo(() => [
-    { name: 'Faol', value: stats.active || 0, color: '#42C95F', shadow: '#19763A', gradient: 'activeGradient' },
-    { name: 'Nosoz', value: stats.broken || 0, color: '#FFD429', shadow: '#B27A00', gradient: 'brokenGradient' },
-    { name: 'Chiqarilgan', value: stats.disposed || 0, color: '#F04E59', shadow: '#9B202C', gradient: 'disposedGradient' },
+    { name: 'Faol', value: stats.active || 0, color: '#22C55E', light: '#86EFAC' },
+    { name: 'Nosoz', value: stats.broken || 0, color: '#F5B81B', light: '#FDE68A' },
+    { name: 'Chiqarilgan', value: stats.disposed || 0, color: '#EF4444', light: '#FCA5A5' },
   ], [stats]);
+
+  const statusChartOption = useMemo(() => ({
+    animationDuration: 900,
+    animationEasing: 'cubicOut',
+    color: statusData.map((item) => item.color),
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(15, 23, 42, .94)',
+      borderWidth: 0,
+      padding: [11, 14],
+      textStyle: { color: '#fff', fontFamily: 'inherit' },
+      extraCssText: 'border-radius:10px;box-shadow:0 12px 30px rgba(15,23,42,.2)',
+      formatter: ({ marker, name, value, percent }) => (
+        `${marker}<strong>${name}</strong><br/>${numberFormatter.format(value)} ta aktiv &nbsp; <span style="color:#94a3b8">${percent}%</span>`
+      ),
+    },
+    series: [{
+      name: 'Aktivlar holati',
+      type: 'pie',
+      radius: ['53%', '78%'],
+      center: ['50%', '48%'],
+      startAngle: 90,
+      clockwise: true,
+      minAngle: 3,
+      padAngle: 3,
+      avoidLabelOverlap: true,
+      itemStyle: {
+        borderRadius: 9,
+        borderColor: '#fff',
+        borderWidth: 3,
+        shadowBlur: 18,
+        shadowColor: 'rgba(15, 45, 67, .16)',
+        shadowOffsetY: 8,
+      },
+      emphasis: {
+        scale: true,
+        scaleSize: 8,
+        itemStyle: {
+          shadowBlur: 28,
+          shadowColor: 'rgba(15, 45, 67, .28)',
+          shadowOffsetY: 12,
+        },
+      },
+      label: { show: false },
+      labelLine: { show: false },
+      data: statusData.map((item) => ({
+        name: item.name,
+        value: item.value,
+        itemStyle: {
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 1,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: item.light },
+              { offset: 0.48, color: item.color },
+              { offset: 1, color: item.color },
+            ],
+          },
+        },
+      })),
+    }],
+    graphic: [
+      {
+        type: 'text',
+        left: 'center',
+        top: '38%',
+        style: {
+          text: numberFormatter.format(stats.total || 0),
+          fill: '#173B57',
+          fontSize: 34,
+          fontWeight: 800,
+          textAlign: 'center',
+        },
+      },
+      {
+        type: 'text',
+        left: 'center',
+        top: '54%',
+        style: {
+          text: 'jami aktiv',
+          fill: '#8291A3',
+          fontSize: 12,
+          fontWeight: 500,
+          textAlign: 'center',
+        },
+      },
+    ],
+  }), [stats.total, statusData]);
 
   const departmentData = (stats.perDepartment || []).slice(0, 7);
   const today = new Intl.DateTimeFormat('uz-UZ', {
@@ -149,60 +244,14 @@ export default function DashboardPage() {
             title={<div><strong>Aktivlar holati</strong><small>Joriy holat bo‘yicha taqsimot</small></div>}
           >
             <div className="dashboard-donut">
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <defs>
-                    <linearGradient id="activeGradient" x1="0" y1="0" x2="0.8" y2="1">
-                      <stop offset="0%" stopColor="#A4F087" />
-                      <stop offset="42%" stopColor="#4FD267" />
-                      <stop offset="100%" stopColor="#20A447" />
-                    </linearGradient>
-                    <linearGradient id="brokenGradient" x1="0" y1="0" x2="0.8" y2="1">
-                      <stop offset="0%" stopColor="#FFF39A" />
-                      <stop offset="42%" stopColor="#FFDC3E" />
-                      <stop offset="100%" stopColor="#E6A900" />
-                    </linearGradient>
-                    <linearGradient id="disposedGradient" x1="0" y1="0" x2="0.8" y2="1">
-                      <stop offset="0%" stopColor="#FF9A9F" />
-                      <stop offset="42%" stopColor="#F45B64" />
-                      <stop offset="100%" stopColor="#C92D3A" />
-                    </linearGradient>
-                    <filter id="donut3dShadow" x="-30%" y="-30%" width="160%" height="180%">
-                      <feDropShadow dx="0" dy="9" stdDeviation="7" floodColor="#102a43" floodOpacity=".32" />
-                    </filter>
-                  </defs>
-                  <Pie
-                    data={statusData}
-                    dataKey="value"
-                    innerRadius={0}
-                    outerRadius={108}
-                    cy="54%"
-                    paddingAngle={2}
-                    startAngle={90}
-                    endAngle={-270}
-                    stroke="none"
-                    isAnimationActive={false}
-                  >
-                    {statusData.map((item) => <Cell key={`shadow-${item.name}`} fill={item.shadow} />)}
-                  </Pie>
-                  <Pie
-                    data={statusData}
-                    dataKey="value"
-                    innerRadius={0}
-                    outerRadius={108}
-                    cy="48%"
-                    paddingAngle={2}
-                    startAngle={90}
-                    endAngle={-270}
-                    stroke="#ffffff"
-                    strokeWidth={4}
-                    style={{ filter: 'url(#donut3dShadow)' }}
-                  >
-                    {statusData.map((item) => <Cell key={item.name} fill={`url(#${item.gradient})`} />)}
-                  </Pie>
-                  <Tooltip formatter={(value, name) => [numberFormatter.format(value), name]} />
-                </PieChart>
-              </ResponsiveContainer>
+              <ReactEChartsCore
+                echarts={echarts}
+                className="dashboard-status-chart"
+                option={statusChartOption}
+                notMerge
+                lazyUpdate
+                opts={{ renderer: 'svg' }}
+              />
               <div className="dashboard-legend">
                 {statusData.map((item) => (
                   <div key={item.name}>
