@@ -370,11 +370,11 @@ router.get('/assets.pdf', asyncHandler(async (req, res) => {
   const range = document.bufferedPageRange();
   for (let pageIndex = range.start; pageIndex < range.start + range.count; pageIndex += 1) {
     document.switchToPage(pageIndex);
-    document.moveTo(left, pageHeight - 31).lineTo(pageWidth - left, pageHeight - 31)
+    document.moveTo(left, pageHeight - 50).lineTo(pageWidth - left, pageHeight - 50)
       .strokeColor(colors.line).lineWidth(0.5).stroke();
     document.fillColor(colors.muted).font('Helvetica').fontSize(8)
-      .text('Aktivlarni boshqarish tizimi', left, pageHeight - 23);
-    document.text(`Sahifa ${pageIndex + 1} / ${range.count}`, pageWidth - 130, pageHeight - 23, {
+      .text('Aktivlarni boshqarish tizimi', left, pageHeight - 43);
+    document.text(`Sahifa ${pageIndex + 1} / ${range.count}`, pageWidth - 130, pageHeight - 43, {
       width: 98,
       align: 'right',
     });
