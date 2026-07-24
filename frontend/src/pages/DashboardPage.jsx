@@ -1,7 +1,243 @@
-import React from 'react';
-import { Card, Col, Row, Statistic, Typography } from 'antd';
-import { useEffect, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ApartmentOutlined,
+  ArrowRightOutlined,
+  CheckCircleOutlined,
+  FileTextOutlined,
+  LaptopOutlined,
+  SafetyCertificateOutlined,
+  TeamOutlined,
+  ToolOutlined,
+  UserSwitchOutlined,
+} from '@ant-design/icons';
+import { Button, Card, Col, Progress, Row, Space, Table, Tag, Typography } from 'antd';
+import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { api } from '../api/client.js';
 
-export default function DashboardPage(){ const [s,setS]=useState({perDepartment:[]}); useEffect(()=>{api.get('/dashboard/stats').then(r=>setS(r.data));},[]); const pie=[{name:'Faol',value:s.active||0},{name:'Nosoz',value:s.broken||0},{name:'Hisobdan chiqarilgan',value:s.disposed||0}]; return <><Typography.Title level={2}>Boshqaruv paneli</Typography.Title><Row gutter={[16,16]}><Col xs={24} md={6}><Card><Statistic title="Jami aktivlar" value={s.total||0}/></Card></Col><Col xs={24} md={6}><Card><Statistic title="Faol" value={s.active||0}/></Card></Col><Col xs={24} md={6}><Card><Statistic title="Nosoz" value={s.broken||0}/></Card></Col><Col xs={24} md={6}><Card><Statistic title="Hisobdan chiqarilgan" value={s.disposed||0}/></Card></Col><Col xs={24} lg={12}><Card title="Holat bo‘yicha"><ResponsiveContainer width="100%" height={300}><PieChart><Pie data={pie} dataKey="value" label>{pie.map((_,i)=><Cell key={i} fill={['#52c41a','#ff4d4f','#8c8c8c'][i]}/>)}</Pie><Tooltip/></PieChart></ResponsiveContainer></Card></Col><Col xs={24} lg={12}><Card title="Bo‘limlar bo‘yicha"><ResponsiveContainer width="100%" height={300}><BarChart data={s.perDepartment}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis/><Tooltip/><Bar dataKey="total" fill="#1677ff"/></BarChart></ResponsiveContainer></Card></Col></Row></> }
+const statusMeta = {
+  ACTIVE: { label: 'Faol', color: 'green' },
+  BROKEN: { label: 'Nosoz', color: 'gold' },
+  DISPOSED: { label: 'Chiqarilgan', color: 'red' },
+};
+
+const numberFormatter = new Intl.NumberFormat('uz-UZ');
+
+export default function DashboardPage() {
+  const navigate = useNavigate();
+  const currentUser = useSelector((state) => state.auth.user);
+  const [stats, setStats] = useState({ perDepartment: [], recentAssets: [] });
+
+  useEffect(() => {
+    api.get('/dashboard/stats').then((response) => setStats(response.data));
+  }, []);
+
+  const statusData = useMemo(() => [
+    { name: 'Faol', value: stats.active || 0, color: '#25A56A' },
+    { name: 'Nosoz', value: stats.broken || 0, color: '#F0A320' },
+    { name: 'Chiqarilgan', value: stats.disposed || 0, color: '#E05454' },
+  ], [stats]);
+
+  const departmentData = (stats.perDepartment || []).slice(0, 7);
+  const today = new Intl.DateTimeFormat('uz-UZ', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date());
+
+  const kpis = [
+    {
+      title: 'Jami aktivlar',
+      value: stats.total || 0,
+      subtitle: `${stats.departments || 0} ta bo‘limda`,
+      icon: LaptopOutlined,
+      tone: 'blue',
+    },
+    {
+      title: 'Faol aktivlar',
+      value: stats.active || 0,
+      subtitle: `${stats.activeRate || 0}% foydalanishga tayyor`,
+      icon: CheckCircleOutlined,
+      tone: 'green',
+    },
+    {
+      title: 'Biriktirilgan',
+      value: stats.assigned || 0,
+      subtitle: `${stats.unassigned || 0} ta biriktirilmagan`,
+      icon: UserSwitchOutlined,
+      tone: 'violet',
+    },
+    {
+      title: 'Ochiq texnik xizmat',
+      value: stats.openMaintenance || 0,
+      subtitle: `${stats.broken || 0} ta nosoz aktiv`,
+      icon: ToolOutlined,
+      tone: 'orange',
+    },
+  ];
+
+  const recentColumns = [
+    {
+      title: 'Aktiv',
+      render: (asset) => (
+        <button className="dashboard-asset-link" type="button" onClick={() => navigate(`/assets/${asset.id}`)}>
+          <span className="dashboard-asset-icon"><LaptopOutlined /></span>
+          <span><strong>{asset.name}</strong><small>{asset.model || 'Model kiritilmagan'}</small></span>
+        </button>
+      ),
+    },
+    { title: 'Inventar raqami', dataIndex: 'inventoryNumber' },
+    { title: 'Bo‘lim', render: (asset) => asset.department?.name || 'Biriktirilmagan' },
+    {
+      title: 'Holat',
+      dataIndex: 'status',
+      render: (status) => <Tag color={statusMeta[status]?.color}>{statusMeta[status]?.label || status}</Tag>,
+    },
+  ];
+
+  return (
+    <div className="executive-dashboard">
+      <section className="dashboard-welcome">
+        <div>
+          <Typography.Text className="dashboard-eyebrow">ADMINISTRATOR PANELI</Typography.Text>
+          <Typography.Title level={2}>Xush kelibsiz, {currentUser?.fullName}</Typography.Title>
+          <Typography.Paragraph>
+            Tizim holati va tashkilot aktivlarining bugungi umumiy ko‘rinishi.
+          </Typography.Paragraph>
+          <Typography.Text className="dashboard-date">{today}</Typography.Text>
+        </div>
+        <Space wrap>
+          <Button icon={<FileTextOutlined />} onClick={() => navigate('/reports')}>Hisobotlar</Button>
+          <Button type="primary" icon={<LaptopOutlined />} onClick={() => navigate('/assets')}>
+            Aktivlarni boshqarish
+          </Button>
+        </Space>
+      </section>
+
+      <Row gutter={[16, 16]} className="dashboard-kpi-grid">
+        {kpis.map(({ title, value, subtitle, icon: Icon, tone }) => (
+          <Col xs={24} sm={12} xl={6} key={title}>
+            <Card className={`dashboard-kpi dashboard-kpi-${tone}`} bordered={false}>
+              <div className="dashboard-kpi-top">
+                <span className="dashboard-kpi-icon"><Icon /></span>
+                <Typography.Text>{title}</Typography.Text>
+              </div>
+              <strong>{numberFormatter.format(value)}</strong>
+              <Typography.Text type="secondary">{subtitle}</Typography.Text>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={10}>
+          <Card
+            className="dashboard-chart-card"
+            title={<div><strong>Aktivlar holati</strong><small>Joriy holat bo‘yicha taqsimot</small></div>}
+          >
+            <div className="dashboard-donut">
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={statusData}
+                    dataKey="value"
+                    innerRadius={75}
+                    outerRadius={105}
+                    paddingAngle={4}
+                    stroke="none"
+                  >
+                    {statusData.map((item) => <Cell key={item.name} fill={item.color} />)}
+                  </Pie>
+                  <Tooltip formatter={(value, name) => [numberFormatter.format(value), name]} />
+                  <text x="50%" y="47%" textAnchor="middle" className="dashboard-donut-value">
+                    {stats.total || 0}
+                  </text>
+                  <text x="50%" y="56%" textAnchor="middle" className="dashboard-donut-label">
+                    jami aktiv
+                  </text>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="dashboard-legend">
+                {statusData.map((item) => (
+                  <div key={item.name}>
+                    <span style={{ background: item.color }} />
+                    <Typography.Text>{item.name}</Typography.Text>
+                    <strong>{item.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+        </Col>
+
+        <Col xs={24} xl={14}>
+          <Card
+            className="dashboard-chart-card"
+            title={<div><strong>Bo‘limlar kesimida</strong><small>Aktivlar soni bo‘yicha yetakchi bo‘limlar</small></div>}
+            extra={<Button type="link" onClick={() => navigate('/departments')}>Barchasi <ArrowRightOutlined /></Button>}
+          >
+            <ResponsiveContainer width="100%" height={310}>
+              <BarChart data={departmentData} layout="vertical" margin={{ top: 8, right: 25, left: 20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e8eef4" />
+                <XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={105} axisLine={false} tickLine={false} />
+                <Tooltip cursor={{ fill: '#f4f8fb' }} formatter={(value) => [`${value} ta`, 'Aktivlar']} />
+                <Bar dataKey="total" fill="#2878D0" radius={[0, 7, 7, 0]} barSize={22} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} className="dashboard-bottom-row">
+        <Col xs={24} xl={17}>
+          <Card
+            className="dashboard-table-card"
+            title={<div><strong>So‘nggi qo‘shilgan aktivlar</strong><small>Yaqinda ro‘yxatdan o‘tkazilgan qurilmalar</small></div>}
+            extra={<Button type="link" onClick={() => navigate('/assets')}>Barchasini ko‘rish <ArrowRightOutlined /></Button>}
+          >
+            <Table
+              rowKey="id"
+              dataSource={stats.recentAssets || []}
+              columns={recentColumns}
+              pagination={false}
+              scroll={{ x: 720 }}
+              locale={{ emptyText: 'Aktivlar mavjud emas' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} xl={7}>
+          <Card className="dashboard-health-card" title="Tizim ko‘rsatkichlari">
+            <div className="dashboard-health-item">
+              <span><SafetyCertificateOutlined /> Faol aktivlar ulushi</span>
+              <strong>{stats.activeRate || 0}%</strong>
+              <Progress percent={stats.activeRate || 0} showInfo={false} strokeColor="#25A56A" />
+            </div>
+            <div className="dashboard-health-item">
+              <span><UserSwitchOutlined /> Biriktirish darajasi</span>
+              <strong>{stats.assignedRate || 0}%</strong>
+              <Progress percent={stats.assignedRate || 0} showInfo={false} strokeColor="#7158D9" />
+            </div>
+            <div className="dashboard-mini-stats">
+              <div><TeamOutlined /><span><strong>{stats.users || 0}</strong>Foydalanuvchi</span></div>
+              <div><ApartmentOutlined /><span><strong>{stats.departments || 0}</strong>Bo‘lim</span></div>
+            </div>
+          </Card>
+        </Col>
+      </Row>
+    </div>
+  );
+}
