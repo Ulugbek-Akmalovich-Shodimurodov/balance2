@@ -9,7 +9,18 @@ export const userRepository = {
     const userId = Number(id);
     const [user, history] = await Promise.all([
       prisma.user.findUnique({ where: { id: userId }, select: { ...publicUser, assets: { include: { department: true }, orderBy: { name: 'asc' } } } }),
-      prisma.transaction.findMany({ where: { OR: [{ userId }, { fromUserId: userId }] }, include: { asset: { select: { id:true, name:true, model:true, inventoryNumber:true, imageUrl:true } }, fromDepartment: { select: { name:true } }, toDepartment: { select: { name:true } }, actor: { select: { fullName:true } } }, orderBy: { createdAt: 'desc' } }),
+      prisma.transaction.findMany({
+        where: { OR: [{ userId }, { fromUserId: userId }] },
+        include: {
+          asset: { select: { id:true, name:true, model:true, inventoryNumber:true, imageUrl:true } },
+          user: { select: { id:true, fullName:true } },
+          fromUser: { select: { id:true, fullName:true } },
+          fromDepartment: { select: { name:true } },
+          toDepartment: { select: { name:true } },
+          actor: { select: { fullName:true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
     ]);
     return user ? { ...user, history } : null;
   },
