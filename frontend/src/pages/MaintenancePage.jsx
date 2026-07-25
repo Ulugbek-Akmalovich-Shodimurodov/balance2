@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { PlusOutlined, ReloadOutlined, SearchOutlined, ToolOutlined } from '@ant-design/icons';
+import { FileExcelOutlined, FilePdfOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, ToolOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
-import { api } from '../api/client.js';
+import { api, downloadFile } from '../api/client.js';
 import SafeImage from '../components/SafeImage.jsx';
 
 const labels = { NEW: 'Yangi so‘rov', IN_PROGRESS: 'Jarayonda', REPAIRED: 'Tuzatildi', REPLACED: 'Almashtirildi', WAREHOUSED: 'Omborxonada' };
@@ -53,6 +53,25 @@ export default function MaintenancePage() {
       && (!assetStatusFilter || item.asset?.status === assetStatusFilter);
   }), [items, needle, statusFilter, departmentFilter, assetStatusFilter]);
   const hasFilters = Boolean(search || statusFilter || departmentFilter || assetStatusFilter);
+  const [exporting, setExporting] = useState();
+
+  const downloadReport = async (extension) => {
+    const query = new URLSearchParams();
+    if (search.trim()) query.set('search', search.trim());
+    if (statusFilter) query.set('status', statusFilter);
+    if (departmentFilter) query.set('departmentId', departmentFilter);
+    if (assetStatusFilter) query.set('assetStatus', assetStatusFilter);
+    const suffix = query.size ? `?${query.toString()}` : '';
+    try {
+      setExporting(extension);
+      await downloadFile(`/reports/maintenance.${extension}${suffix}`, `texnik-xizmat-hisoboti.${extension}`);
+      message.success(`${extension === 'xlsx' ? 'Excel' : 'PDF'} hisobot yuklandi`);
+    } catch {
+      message.error('Hisobotni yuklab bo‘lmadi');
+    } finally {
+      setExporting(undefined);
+    }
+  };
 
   const report = async (values) => {
     try {
@@ -157,6 +176,23 @@ export default function MaintenancePage() {
             onClick={() => { setSearch(''); setStatusFilter(undefined); setDepartmentFilter(undefined); setAssetStatusFilter(undefined); }}
           >
             Filtrlarni tozalash
+          </Button>
+          <Button
+            type="primary"
+            icon={<FileExcelOutlined />}
+            loading={exporting === 'xlsx'}
+            disabled={Boolean(exporting)}
+            onClick={() => downloadReport('xlsx')}
+          >
+            Excel hisobot
+          </Button>
+          <Button
+            icon={<FilePdfOutlined />}
+            loading={exporting === 'pdf'}
+            disabled={Boolean(exporting)}
+            onClick={() => downloadReport('pdf')}
+          >
+            PDF hisobot
           </Button>
         </Space>
         <Typography.Text type="secondary">

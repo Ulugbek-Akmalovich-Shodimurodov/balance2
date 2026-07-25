@@ -466,4 +466,255 @@ router.get('/assets.pdf', asyncHandler(async (req, res) => {
   document.end();
 }));
 
+const maintenanceLabels = {
+  NEW: 'Yangi so‘rov',
+  IN_PROGRESS: 'Jarayonda',
+  REPAIRED: 'Tuzatildi',
+  REPLACED: 'Almashtirildi',
+  WAREHOUSED: 'Omborxonada',
+};
+
+const maintenanceColors = {
+  NEW: { background: 'FDECEA', text: 'B42318' },
+  IN_PROGRESS: { background: 'FFF4CE', text: '9A6700' },
+  REPAIRED: { background: 'E8F5E9', text: '237A3B' },
+  REPLACED: { background: 'E8F1FD', text: '175CD3' },
+  WAREHOUSED: { background: 'F3E8FF', text: '7E22CE' },
+};
+
+const maintenanceReport = async (query, user) => {
+  const search = String(query.search || '').trim();
+  const where = {
+    ...(user.role === 'ADMIN' ? {} : { asset: { assignedUserId: user.id } }),
+    ...(query.status ? { status: query.status } : {}),
+    ...(query.departmentId ? { asset: { departmentId: Number(query.departmentId), ...(user.role === 'ADMIN' ? {} : { assignedUserId: user.id }) } } : {}),
+    ...(query.assetStatus ? { asset: {
+      status: query.assetStatus,
+      ...(query.departmentId ? { departmentId: Number(query.departmentId) } : {}),
+      ...(user.role === 'ADMIN' ? {} : { assignedUserId: user.id }),
+    } } : {}),
+    ...(search ? {
+      OR: [
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { asset: { name: { contains: search, mode: 'insensitive' } } },
+        { asset: { model: { contains: search, mode: 'insensitive' } } },
+        { asset: { inventoryNumber: { contains: search, mode: 'insensitive' } } },
+        { asset: { serialNumber: { contains: search, mode: 'insensitive' } } },
+        { asset: { assignedUser: { fullName: { contains: search, mode: 'insensitive' } } } },
+      ],
+    } : {}),
+  };
+  const [logs, department] = await Promise.all([
+    prisma.maintenanceLog.findMany({
+      where,
+      include: {
+        asset: {
+          include: {
+            department: { select: { name: true } },
+            assignedUser: { select: { fullName: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    query.departmentId
+      ? prisma.department.findUnique({ where: { id: Number(query.departmentId) }, select: { name: true } })
+      : null,
+  ]);
+  const summary = {
+    total: logs.length,
+    open: logs.filter((log) => ['NEW', 'IN_PROGRESS'].includes(log.status)).length,
+    repaired: logs.filter((log) => log.status === 'REPAIRED').length,
+    replaced: logs.filter((log) => ['REPLACED', 'WAREHOUSED'].includes(log.status)).length,
+  };
+  const filters = [
+    `Jarayon: ${query.status ? maintenanceLabels[query.status] || query.status : 'Barchasi'}`,
+    `Bo‘lim: ${department?.name || 'Barchasi'}`,
+    `Qurilma holati: ${query.assetStatus ? statusLabels[query.assetStatus] || query.assetStatus : 'Barchasi'}`,
+    `Qidiruv: ${search || 'Yo‘q'}`,
+  ].join('  |  ');
+  return { logs, summary, filters };
+};
+
+const maintenanceFilename = (extension) => (
+  `texnik-xizmat-hisoboti-${new Date().toISOString().slice(0, 10)}.${extension}`
+);
+
+router.get('/maintenance.xlsx', asyncHandler(async (req, res) => {
+  const { logs, summary, filters } = await maintenanceReport(req.query, req.user);
+  const images = await loadReportImages(logs.map((log) => log.asset));
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Aktivlarni boshqarish tizimi';
+  workbook.created = new Date();
+  workbook.subject = 'Texnik xizmat bo‘yicha hisobot';
+  const sheet = workbook.addWorksheet('Texnik xizmat', {
+    properties: { defaultRowHeight: 20 },
+    pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+    views: [{ state: 'frozen', ySplit: 9 }],
+  });
+  sheet.columns = [
+    { key: 'index', width: 7 }, { key: 'image', width: 11 }, { key: 'asset', width: 21 },
+    { key: 'model', width: 20 }, { key: 'inventory', width: 21 }, { key: 'department', width: 20 },
+    { key: 'user', width: 25 }, { key: 'issue', width: 30 }, { key: 'status', width: 19 },
+    { key: 'date', width: 20 },
+  ];
+  sheet.mergeCells('A1:J2');
+  Object.assign(sheet.getCell('A1'), {
+    value: 'TEXNIK XIZMAT BO‘YICHA HISOBOT',
+    font: { name: 'Arial', size: 20, bold: true, color: { argb: 'FFFFFFFF' } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173B57' } },
+    alignment: { vertical: 'middle', horizontal: 'left', indent: 1 },
+  });
+  sheet.mergeCells('A3:J3');
+  sheet.getCell('A3').value = `Yaratilgan vaqt: ${generatedAt()}`;
+  sheet.getCell('A3').font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF64748B' } };
+  sheet.mergeCells('A4:J4');
+  sheet.getCell('A4').value = `Qo‘llangan filtrlar: ${filters}`;
+  sheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  sheet.getCell('A4').alignment = { vertical: 'middle', wrapText: true, indent: 1 };
+  [
+    ['A6:B7', 'JAMI', summary.total, '1677FF'],
+    ['C6:D7', 'OCHIQ', summary.open, 'D99100'],
+    ['E6:G7', 'TUZATILDI', summary.repaired, '2E7D32'],
+    ['H6:J7', 'ALMASHTIRILDI / OMBORDA', summary.replaced, '7E22CE'],
+  ].forEach(([range, label, value, color]) => {
+    sheet.mergeCells(range);
+    const cell = sheet.getCell(range.split(':')[0]);
+    cell.value = `${value}\n${label}`;
+    cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${color}` } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  });
+  const header = sheet.getRow(9);
+  header.values = ['№', 'Rasm', 'Qurilma', 'Model', 'Inventar raqami', 'Bo‘lim', 'Foydalanuvchi', 'Muammo', 'Jarayon holati', 'Sana'];
+  header.height = 30;
+  header.eachCell((cell) => {
+    cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF245B78' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  });
+  logs.forEach((log, index) => {
+    const row = sheet.addRow({
+      index: index + 1, image: '', asset: log.asset?.name || '—', model: log.asset?.model || '—',
+      inventory: log.asset?.inventoryNumber || '—', department: log.asset?.department?.name || 'Biriktirilmagan',
+      user: log.asset?.assignedUser?.fullName || 'Biriktirilmagan', issue: log.title,
+      status: maintenanceLabels[log.status] || log.status,
+      date: new Intl.DateTimeFormat('uz-UZ', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' }).format(log.createdAt),
+    });
+    row.height = 48;
+    row.eachCell((cell, column) => {
+      cell.font = { name: 'Arial', size: 9, color: { argb: 'FF1F2937' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 ? 'FFF7FAFC' : 'FFFFFFFF' } };
+      cell.alignment = { vertical: 'middle', horizontal: column === 1 ? 'center' : 'left', wrapText: true };
+      cell.border = { bottom: { style: 'hair', color: { argb: 'FFD7E0E7' } } };
+    });
+    const reportImage = images.get(log.asset?.id);
+    if (reportImage) {
+      const imageId = workbook.addImage({ buffer: reportImage.buffer, extension: reportImage.extension });
+      sheet.addImage(imageId, { tl: { col: 1.15, row: row.number - 0.88 }, ext: { width: 42, height: 42 }, editAs: 'oneCell' });
+    } else {
+      row.getCell(2).value = 'Rasm yo‘q';
+      row.getCell(2).font = { name: 'Arial', size: 8, italic: true, color: { argb: 'FF94A3B8' } };
+    }
+    const color = maintenanceColors[log.status] || { background: 'F1F5F9', text: '334155' };
+    row.getCell(9).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${color.background}` } };
+    row.getCell(9).font = { name: 'Arial', size: 9, bold: true, color: { argb: `FF${color.text}` } };
+  });
+  sheet.autoFilter = { from: 'A9', to: `J${Math.max(9, sheet.lastRow.number)}` };
+  sheet.pageSetup.printArea = `A1:J${Math.max(9, sheet.lastRow.number)}`;
+  sheet.headerFooter.oddFooter = '&L Aktivlarni boshqarish tizimi&C Texnik xizmat&R Sahifa &P / &N';
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${maintenanceFilename('xlsx')}"`);
+  await workbook.xlsx.write(res);
+  res.end();
+}));
+
+router.get('/maintenance.pdf', asyncHandler(async (req, res) => {
+  const { logs, summary, filters } = await maintenanceReport(req.query, req.user);
+  const images = await loadReportImages(logs.map((log) => log.asset));
+  const document = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30, bufferPages: true });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${maintenanceFilename('pdf')}"`);
+  document.pipe(res);
+  const width = document.page.width - 60;
+  const columns = [
+    ['#', 25], ['RASM', 45], ['QURILMA', 75], ['INVENTAR', 85], ["BO'LIM", 75],
+    ['FOYDALANUVCHI', 95], ['MUAMMO', 120], ['HOLAT', 80], ['SANA', width - 600],
+  ];
+  const drawBrand = (continuation = false) => {
+    document.rect(0, 0, document.page.width, continuation ? 48 : 78).fill('#173B57');
+    document.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(continuation ? 14 : 20)
+      .text(continuation ? 'TEXNIK XIZMAT HISOBOTI - DAVOMI' : 'TEXNIK XIZMAT BO‘YICHA HISOBOT', 30, continuation ? 16 : 22);
+    if (!continuation) document.fillColor('#DCEAF3').font('Helvetica').fontSize(9).text(`Yaratilgan vaqt: ${pdfSafe(generatedAt())}`, 30, 51);
+  };
+  const drawHeader = (y) => {
+    document.rect(30, y, width, 27).fill('#245B78');
+    let x = 30;
+    columns.forEach(([label, columnWidth]) => {
+      document.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(7).text(label, x + 4, y + 9, { width: columnWidth - 8, lineBreak: false });
+      x += columnWidth;
+    });
+    return y + 27;
+  };
+  drawBrand();
+  document.fillColor('#64748B').font('Helvetica').fontSize(8).text(pdfSafe(filters), 30, 88, { width });
+  const cards = [
+    ['JAMI', summary.total, '#1677FF'], ['OCHIQ', summary.open, '#D99100'],
+    ['TUZATILDI', summary.repaired, '#2E7D32'], ['ALMASHTIRILDI / OMBORDA', summary.replaced, '#7E22CE'],
+  ];
+  cards.forEach(([label, value, color], index) => {
+    const cardWidth = (width - 24) / 4;
+    const x = 30 + index * (cardWidth + 8);
+    document.roundedRect(x, 110, cardWidth, 43, 5).fill(color);
+    document.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(15).text(String(value), x + 10, 118);
+    document.fontSize(7).text(label, x + 10, 137, { width: cardWidth - 20 });
+  });
+  let y = drawHeader(170);
+  logs.forEach((log, index) => {
+    if (y + 38 > document.page.height - 45) {
+      document.addPage(); drawBrand(true); y = drawHeader(58);
+    }
+    document.rect(30, y, width, 38).fill(index % 2 ? '#F7FAFC' : '#FFFFFF');
+    const values = [
+      String(index + 1), '', truncate(log.asset?.name, 18), truncate(log.asset?.inventoryNumber, 19),
+      truncate(log.asset?.department?.name || 'Biriktirilmagan', 18),
+      truncate(log.asset?.assignedUser?.fullName || 'Biriktirilmagan', 23),
+      truncate(log.title, 32), maintenanceLabels[log.status] || log.status,
+      new Intl.DateTimeFormat('uz-UZ', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' }).format(log.createdAt),
+    ];
+    let x = 30;
+    values.forEach((value, columnIndex) => {
+      const columnWidth = columns[columnIndex][1];
+      if (columnIndex === 1) {
+        const reportImage = images.get(log.asset?.id);
+        if (reportImage && ['jpeg', 'png'].includes(reportImage.extension)) {
+          try {
+            document.image(reportImage.buffer, x + 8, y + 4, { fit: [29, 29], align: 'center', valign: 'center' });
+          } catch {
+            document.fillColor('#94A3B8').font('Helvetica').fontSize(6).text('Rasm yoq', x + 3, y + 16, { width: columnWidth - 6, align: 'center' });
+          }
+        } else {
+          document.fillColor('#94A3B8').font('Helvetica').fontSize(6).text('Rasm yoq', x + 3, y + 16, { width: columnWidth - 6, align: 'center' });
+        }
+        x += columnWidth;
+        return;
+      }
+      document.fillColor('#1F2937').font(columnIndex === 2 ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5)
+        .text(pdfSafe(value), x + 4, y + 14, { width: columnWidth - 8, lineBreak: false });
+      x += columnWidth;
+    });
+    document.moveTo(30, y + 38).lineTo(30 + width, y + 38).strokeColor('#D7E0E7').lineWidth(.4).stroke();
+    y += 38;
+  });
+  if (!logs.length) document.fillColor('#64748B').font('Helvetica-Oblique').fontSize(11).text('Filtrlarga mos yozuv topilmadi', 30, y + 18, { width, align: 'center' });
+  const range = document.bufferedPageRange();
+  for (let page = range.start; page < range.start + range.count; page += 1) {
+    document.switchToPage(page);
+    document.fillColor('#64748B').font('Helvetica').fontSize(8).text('Aktivlarni boshqarish tizimi', 30, document.page.height - 32);
+    document.text(`Sahifa ${page + 1} / ${range.count}`, document.page.width - 130, document.page.height - 32, { width: 100, align: 'right' });
+  }
+  document.end();
+}));
+
 export default router;
