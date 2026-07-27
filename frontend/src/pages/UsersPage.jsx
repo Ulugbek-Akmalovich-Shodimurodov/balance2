@@ -65,6 +65,8 @@ export default function UsersPage() {
       user.fullName,
       user.login,
       user.phone,
+      user.passportSeries,
+      user.pinfl,
       user.department?.name,
     ].some((value) => value?.toLocaleLowerCase('uz').includes(normalizedSearch));
     const matchesRole = !roleFilter || user.role === roleFilter;
@@ -110,8 +112,13 @@ export default function UsersPage() {
 
   const save = async (values, mode) => {
     try {
-      if (mode === 'create') await api.post('/users', values);
-      else await api.put(`/users/${editing.id}`, values);
+      const payload = {
+        ...values,
+        passportSeries: values.passportSeries?.replace(/[\s-]/g, '').toUpperCase(),
+        pinfl: values.pinfl?.replace(/\s/g, ''),
+      };
+      if (mode === 'create') await api.post('/users', payload);
+      else await api.put(`/users/${editing.id}`, payload);
       message.success(mode === 'create' ? 'Xodim yaratildi' : 'Xodim yangilandi');
       setCreating(false);
       setEditing(null);
@@ -129,6 +136,8 @@ export default function UsersPage() {
       fullName: user.fullName,
       login: user.login,
       phone: user.phone,
+      passportSeries: user.passportSeries,
+      pinfl: user.pinfl,
       role: user.role,
       departmentId: user.department?.id,
       imageUrl: user.imageUrl,
@@ -163,6 +172,26 @@ export default function UsersPage() {
       <Form.Item name="phone" label="Telefon raqam">
         <Input placeholder="+998 90 123 45 67" />
       </Form.Item>
+      <Form.Item
+        name="passportSeries"
+        label="Pasport seria raqami"
+        rules={[
+          { required: isCreate, message: 'Pasport seria raqamini kiriting' },
+          { pattern: /^[A-Za-z]{2}\d{7}$/, message: 'Masalan: AA1234567' },
+        ]}
+      >
+        <Input placeholder="AA1234567" maxLength={9} style={{ textTransform: 'uppercase' }} />
+      </Form.Item>
+      <Form.Item
+        name="pinfl"
+        label="JShShIR"
+        rules={[
+          { required: isCreate, message: 'JShShIRni kiriting' },
+          { pattern: /^\d{14}$/, message: 'JShShIR 14 ta raqamdan iborat bo‘lishi kerak' },
+        ]}
+      >
+        <Input placeholder="14 ta raqam" maxLength={14} inputMode="numeric" />
+      </Form.Item>
       <Form.Item name="role" label="Rol" initialValue="VIEWER" rules={[{ required: true }]}>
         <Select options={roleOptions} />
       </Form.Item>
@@ -192,6 +221,8 @@ export default function UsersPage() {
     },
     { title: 'Login', dataIndex: 'login' },
     { title: 'Telefon', dataIndex: 'phone', render: (phone) => phone || '—' },
+    { title: 'Pasport', dataIndex: 'passportSeries', render: (value) => value || '—' },
+    { title: 'JShShIR', dataIndex: 'pinfl', render: (value) => value || '—' },
     {
       title: 'Rol',
       dataIndex: 'role',
@@ -241,7 +272,7 @@ export default function UsersPage() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               prefix={<SearchOutlined />}
-              placeholder="Ism, login, telefon yoki bo‘lim bo‘yicha qidirish"
+              placeholder="Ism, login, pasport, JShShIR yoki bo‘lim bo‘yicha qidirish"
               style={{ width: 360, maxWidth: '100%' }}
             />
             <Select
@@ -280,7 +311,7 @@ export default function UsersPage() {
             rowKey="id"
             dataSource={filteredItems}
             columns={columns}
-            scroll={{ x: 1050 }}
+            scroll={{ x: 1300 }}
             pagination={{
               defaultPageSize: 10,
               showSizeChanger: true,

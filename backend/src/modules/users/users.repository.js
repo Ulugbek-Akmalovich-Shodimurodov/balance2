@@ -1,6 +1,6 @@
 import { prisma } from '../../config/db.js';
 
-const publicUser = { id:true, fullName:true, login:true, phone:true, imageUrl:true, role:true, department:true, createdAt:true };
+const publicUser = { id:true, fullName:true, login:true, phone:true, passportSeries:true, pinfl:true, imageUrl:true, role:true, department:true, createdAt:true };
 
 export const userRepository = {
   findByLogin: (identifier) => prisma.user.findFirst({ where: { OR: [{ login: identifier }, { email: identifier }] } }),
