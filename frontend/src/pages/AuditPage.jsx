@@ -3,11 +3,7 @@ import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Card, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import { api } from '../api/client.js';
 
-const actionLabels = {
-  ASSET_CREATE: 'Aktiv qo‘shildi',
-  ASSET_UPDATE: 'Aktiv ma’lumotlari o‘zgartirildi',
-  ASSET_DELETE: 'Aktiv o‘chirildi',
-};
+const actionLabels = { CREATE: 'Yaratdi', UPDATE: 'Tahrirladi', DELETE: 'O‘chirdi' };
 
 const entityLabels = {
   Asset: 'Aktiv',
@@ -22,7 +18,8 @@ const humanize = (value) => value
   .toLocaleLowerCase('uz')
   .replace(/^./, (letter) => letter.toLocaleUpperCase('uz'));
 
-const getActionLabel = (value) => actionLabels[value] || humanize(value) || 'Noma’lum amal';
+const getActionKind = (value) => value?.split('_').at(-1);
+const getActionLabel = (value) => actionLabels[getActionKind(value)] || humanize(value) || 'Noma’lum amal';
 const getEntityLabel = (value) => entityLabels[value] || humanize(value) || 'Noma’lum obyekt';
 
 export default function AuditPage() {
@@ -35,10 +32,10 @@ export default function AuditPage() {
     api.get('/audit-logs').then((response) => setItems(response.data));
   }, []);
 
-  const actionOptions = [...new Set(items.map((item) => item.action))]
+  const actionOptions = [...new Set(items.map((item) => getActionKind(item.action)))]
     .filter(Boolean)
     .sort()
-    .map((value) => ({ value, label: getActionLabel(value) }));
+    .map((value) => ({ value, label: actionLabels[value] || humanize(value) }));
   const entityOptions = [...new Set(items.map((item) => item.entity))]
     .filter(Boolean)
     .sort()
@@ -51,25 +48,31 @@ export default function AuditPage() {
       getActionLabel(item.action),
       item.entity,
       getEntityLabel(item.entity),
+      item.objectName,
       item.entityId?.toString(),
       item.ipAddress,
+      item.macAddress,
     ].some((value) => value?.toLocaleLowerCase('uz').includes(needle));
-    return matchesSearch && (!action || item.action === action) && (!entity || item.entity === entity);
+    return matchesSearch && (!action || getActionKind(item.action) === action) && (!entity || item.entity === entity);
   }), [items, needle, action, entity]);
   const hasFilters = Boolean(search || action || entity);
 
   const columns = [
     { title: 'Kim', render: (row) => row.actor?.fullName || 'Tizim' },
-    { title: 'Amal', dataIndex: 'action', render: (value) => <Tag color="blue">{getActionLabel(value)}</Tag> },
-    { title: 'Obyekt', dataIndex: 'entity', render: getEntityLabel },
-    { title: 'Obyekt ID', dataIndex: 'entityId', render: (value) => value || '—' },
+    { title: 'Amaliyot', dataIndex: 'action', render: (value) => <Tag color="blue">{getActionLabel(value)}</Tag> },
+    { title: 'Obyekt', dataIndex: 'objectName', render: (value) => value || '—' },
     {
-      title: 'IP manzil',
+      title: 'IP',
       dataIndex: 'ipAddress',
       render: (value) => value || <Typography.Text type="secondary">Avval saqlanmagan</Typography.Text>,
     },
     {
-      title: 'Vaqt',
+      title: 'MAC',
+      dataIndex: 'macAddress',
+      render: (value) => value || <Typography.Text type="secondary">Aniqlanmaydi</Typography.Text>,
+    },
+    {
+      title: 'Vaqti',
       dataIndex: 'createdAt',
       sorter: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
       defaultSortOrder: 'descend',

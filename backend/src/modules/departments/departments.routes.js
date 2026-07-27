@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../config/db.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
+import { auditService } from '../audit/audit.service.js';
 
 const assetInclude = { assignedUser: { select: { id:true, fullName:true } } };
 
@@ -33,7 +34,29 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const subDepartmentAssets = childIds.map((departmentId) => { const department = byId.get(departmentId); return { id: department.id, name: department.name, assets: assets.filter((asset) => asset.departmentId === departmentId) }; }).filter((group) => group.assets.length > 0);
   res.json({ ...root, assets: assets.filter((asset) => asset.departmentId === root.id), subDepartmentAssets, totalAssets: assets.length });
 }));
-router.post('/', authorize('ADMIN','MANAGER'), asyncHandler(async (req,res)=>res.status(201).json(await prisma.department.create({data:req.body}))));
-router.put('/:id', authorize('ADMIN','MANAGER'), asyncHandler(async (req,res)=>res.json(await prisma.department.update({where:{id:Number(req.params.id)},data:req.body}))));
-router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req,res)=>{await prisma.department.delete({where:{id:Number(req.params.id)}});res.status(204).end();}));
+router.post('/', authorize('ADMIN','MANAGER'), asyncHandler(async (req, res) => {
+  const item = await prisma.$transaction(async (tx) => {
+    const created = await tx.department.create({ data:req.body });
+    await auditService.log(req.user.id, 'DEPARTMENT_CREATE', 'Department', created.id, { objectName: created.name }, req.ip, tx);
+    return created;
+  });
+  res.status(201).json(item);
+}));
+router.put('/:id', authorize('ADMIN','MANAGER'), asyncHandler(async (req, res) => {
+  const item = await prisma.$transaction(async (tx) => {
+    const updated = await tx.department.update({ where:{ id:Number(req.params.id) }, data:req.body });
+    await auditService.log(req.user.id, 'DEPARTMENT_UPDATE', 'Department', updated.id, { objectName: updated.name }, req.ip, tx);
+    return updated;
+  });
+  res.json(item);
+}));
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req, res) => {
+  await prisma.$transaction(async (tx) => {
+    const item = await tx.department.findUnique({ where:{ id:Number(req.params.id) } });
+    if (!item) return;
+    await auditService.log(req.user.id, 'DEPARTMENT_DELETE', 'Department', item.id, { objectName: item.name }, req.ip, tx);
+    await tx.department.delete({ where:{ id:item.id } });
+  });
+  res.status(204).end();
+}));
 export default router;

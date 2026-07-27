@@ -24,7 +24,7 @@ export const userRepository = {
     ]);
     return user ? { ...user, history } : null;
   },
-  create: (data) => prisma.user.create({ data, select: publicUser }),
-  update: (id, data) => prisma.user.update({ where: { id:Number(id) }, data, select: publicUser }),
-  remove: (id) => prisma.user.delete({ where: { id:Number(id) } }),
+  create: (data, db = prisma) => db.user.create({ data, select: publicUser }),
+  update: (id, data, db = prisma) => db.user.update({ where: { id:Number(id) }, data, select: publicUser }),
+  remove: (id, db = prisma) => db.user.delete({ where: { id:Number(id) } }),
 };

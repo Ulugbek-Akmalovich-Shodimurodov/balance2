@@ -103,6 +103,13 @@ export const assetService = {
     }
     return item;
   },
-  async remove(id, actorId, ipAddress) { await auditService.log(actorId, 'ASSET_DELETE', 'Asset', Number(id), {}, ipAddress); return assetRepository.remove(id); },
+  async remove(id, actorId, ipAddress) {
+    return prisma.$transaction(async (tx) => {
+      const item = await tx.asset.findUnique({ where: { id: Number(id) } });
+      if (!item) throw new ApiError(404, 'Aktiv topilmadi');
+      await auditService.log(actorId, 'ASSET_DELETE', 'Asset', item.id, { objectName: item.model || item.name }, ipAddress, tx);
+      return tx.asset.delete({ where: { id: item.id } });
+    });
+  },
   async qr(id) { await this.get(id); return QRCode.toDataURL(`${process.env.CLIENT_URL || 'http://localhost:5173'}/assets/${id}`); }
 };
