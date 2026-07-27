@@ -63,7 +63,11 @@ export default function AuditPage() {
     { title: 'Amal', dataIndex: 'action', render: (value) => <Tag color="blue">{getActionLabel(value)}</Tag> },
     { title: 'Obyekt', dataIndex: 'entity', render: getEntityLabel },
     { title: 'Obyekt ID', dataIndex: 'entityId', render: (value) => value || '—' },
-    { title: 'IP manzil', dataIndex: 'ipAddress', render: (value) => value || '—' },
+    {
+      title: 'IP manzil',
+      dataIndex: 'ipAddress',
+      render: (value) => value || <Typography.Text type="secondary">Avval saqlanmagan</Typography.Text>,
+    },
     {
       title: 'Vaqt',
       dataIndex: 'createdAt',
