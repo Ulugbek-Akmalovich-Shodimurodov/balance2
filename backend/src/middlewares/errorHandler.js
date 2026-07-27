@@ -5,7 +5,11 @@ export function errorHandler(err, req, res, next) {
     const fields = Array.isArray(err.meta?.target) ? err.meta.target : [];
     const message = fields.includes('inventoryNumber')
       ? 'Bu inventar raqami allaqachon mavjud'
-      : 'Bu qiymat allaqachon mavjud';
+      : fields.includes('passportSeries')
+        ? 'Bu pasport seria raqami allaqachon mavjud'
+        : fields.includes('pinfl')
+          ? 'Bu JShShIR allaqachon mavjud'
+          : 'Bu qiymat allaqachon mavjud';
     return res.status(409).json({ message });
   }
   if (err.code === 'P2025') return res.status(404).json({ message: 'Ma\'lumot topilmadi' });

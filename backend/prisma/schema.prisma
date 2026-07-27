@@ -40,6 +40,8 @@ model User {
   login     String?  @unique
   password  String
   phone     String?
+  passportSeries String? @unique
+  pinfl     String?  @unique
   imageUrl  String?
   role      Role     @default(VIEWER)
   departmentId Int?

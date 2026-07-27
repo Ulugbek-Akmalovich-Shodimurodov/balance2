@@ -4,13 +4,33 @@ import { userRepository } from './users.repository.js';
 import { prisma } from '../../config/db.js';
 import { auditService } from '../audit/audit.service.js';
 
+const normalizeIdentity = (data, required = false) => {
+  const hasPassportSeries = Object.hasOwn(data, 'passportSeries');
+  const hasPinfl = Object.hasOwn(data, 'pinfl');
+  const passportSeries = data.passportSeries?.replace(/[\s-]/g, '').toUpperCase();
+  const pinfl = data.pinfl?.replace(/\s/g, '');
+  if (required && (!passportSeries || !pinfl)) {
+    throw new ApiError(400, 'Pasport seria raqami va JShShIR majburiy');
+  }
+  if (passportSeries && !/^[A-Z]{2}\d{7}$/.test(passportSeries)) {
+    throw new ApiError(400, 'Pasport seria raqami AA1234567 formatida bo‘lishi kerak');
+  }
+  if (pinfl && !/^\d{14}$/.test(pinfl)) {
+    throw new ApiError(400, 'JShShIR 14 ta raqamdan iborat bo‘lishi kerak');
+  }
+  return {
+    ...(hasPassportSeries ? { passportSeries: passportSeries || null } : {}),
+    ...(hasPinfl ? { pinfl: pinfl || null } : {}),
+  };
+};
+
 export const userService = {
   list: userRepository.list,
   get: userRepository.get,
   async create(data, actorId, ipAddress) {
     const login = data.login?.trim();
     if (!login || !data.password) throw new ApiError(400, 'Login va parol majburiy');
-    const createData = { ...data, login, email: data.email || `${login}@local.invalid`, departmentId: data.departmentId ? Number(data.departmentId) : null, password: await bcrypt.hash(data.password, 10) };
+    const createData = { ...data, ...normalizeIdentity(data, true), login, email: data.email || `${login}@local.invalid`, departmentId: data.departmentId ? Number(data.departmentId) : null, password: await bcrypt.hash(data.password, 10) };
     return prisma.$transaction(async (tx) => {
       const item = await userRepository.create(createData, tx);
       await auditService.log(actorId, 'USER_CREATE', 'User', item.id, { objectName: item.fullName }, ipAddress, tx);
@@ -18,6 +38,7 @@ export const userService = {
     });
   },
   async update(id, data, actorId, ipAddress) {
+    Object.assign(data, normalizeIdentity(data));
     if (data.password) data.password = await bcrypt.hash(data.password, 10); else delete data.password;
     if (data.login) data.login = data.login.trim();
     data.departmentId = data.departmentId ? Number(data.departmentId) : null;

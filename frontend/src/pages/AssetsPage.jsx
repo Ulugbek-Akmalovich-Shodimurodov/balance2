@@ -102,7 +102,7 @@ export default function AssetsPage() {
     } catch (error) { message.error(error.response?.data?.message || 'Qurilmani yangilab bo‘lmadi'); }
   };
   const removeAsset = async (asset) => { try { await api.delete(`/assets/${asset.id}`); message.success('Qurilma o‘chirildi'); load(); } catch (error) { message.error(error.response?.data?.message || 'Qurilmani o‘chirib bo‘lmadi'); } };
-  const imageButton = (form) => <Upload accept="image/*" maxCount={1} customRequest={uploadImage(form)} showUploadList={{ showRemoveIcon: false }}><Button icon={<UploadOutlined />}>Kompyuterdan rasm tanlash</Button></Upload>;
+  const imageButton = (form) => <Upload accept="image/*" maxCount={1} customRequest={uploadImage(form)} showUploadList={{ showRemoveIcon: false }}><Button icon={<UploadOutlined />}>Rasm tanlash</Button></Upload>;
   const userSelect = (departmentId) => <Select allowClear placeholder="Foydalanuvchini tanlang" options={availableUsers(departmentId)} />;
   const columns = [
     { title: 'Rasm', dataIndex: 'imageUrl', width: 74, render: (url) => <SafeImage src={url} /> },
