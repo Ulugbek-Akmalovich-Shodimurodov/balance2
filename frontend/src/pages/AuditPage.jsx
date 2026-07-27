@@ -3,7 +3,7 @@ import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Card, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import { api } from '../api/client.js';
 
-const actionLabels = { CREATE: 'Yaratdi', UPDATE: 'Tahrirladi', DELETE: 'O‘chirdi' };
+const actionLabels = { CREATE: 'Yaratildi', UPDATE: 'Tahrirlandi', DELETE: 'O‘chirildi' };
 
 const entityLabels = {
   Asset: 'Aktiv',
