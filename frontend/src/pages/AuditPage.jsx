@@ -49,6 +49,7 @@ export default function AuditPage() {
       item.entity,
       getEntityLabel(item.entity),
       item.objectName,
+      item.inventoryNumber,
       item.entityId?.toString(),
       item.ipAddress,
     ].some((value) => value?.toLocaleLowerCase('uz').includes(needle));
@@ -60,6 +61,7 @@ export default function AuditPage() {
     { title: 'Kim', render: (row) => row.actor?.fullName || 'Tizim' },
     { title: 'Amaliyot', dataIndex: 'action', render: (value) => <Tag color="blue">{getActionLabel(value)}</Tag> },
     { title: 'Obyekt', dataIndex: 'objectName', render: (value) => value || '—' },
+    { title: 'Inventar raqami', dataIndex: 'inventoryNumber', render: (value) => value || '—' },
     {
       title: 'IP',
       dataIndex: 'ipAddress',
@@ -85,7 +87,7 @@ export default function AuditPage() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               prefix={<SearchOutlined />}
-              placeholder="Xodim, amal, obyekt, ID yoki IP bo‘yicha qidirish"
+              placeholder="Xodim, amal, obyekt, inventar raqami yoki IP bo‘yicha qidirish"
               style={{ width: 360, maxWidth: '100%' }}
             />
             <Select
@@ -121,7 +123,7 @@ export default function AuditPage() {
             rowKey="id"
             dataSource={filteredItems}
             columns={columns}
-            scroll={{ x: 850 }}
+            scroll={{ x: 1000 }}
             pagination={{
               defaultPageSize: 20,
               showSizeChanger: true,

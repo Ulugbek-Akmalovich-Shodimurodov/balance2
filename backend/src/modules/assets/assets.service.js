@@ -107,7 +107,10 @@ export const assetService = {
     return prisma.$transaction(async (tx) => {
       const item = await tx.asset.findUnique({ where: { id: Number(id) } });
       if (!item) throw new ApiError(404, 'Aktiv topilmadi');
-      await auditService.log(actorId, 'ASSET_DELETE', 'Asset', item.id, { objectName: item.model || item.name }, ipAddress, tx);
+      await auditService.log(actorId, 'ASSET_DELETE', 'Asset', item.id, {
+        objectName: item.model || item.name,
+        inventoryNumber: item.inventoryNumber
+      }, ipAddress, tx);
       return tx.asset.delete({ where: { id: item.id } });
     });
   },
