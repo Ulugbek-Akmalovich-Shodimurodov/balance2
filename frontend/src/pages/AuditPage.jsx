@@ -51,7 +51,6 @@ export default function AuditPage() {
       item.objectName,
       item.entityId?.toString(),
       item.ipAddress,
-      item.macAddress,
     ].some((value) => value?.toLocaleLowerCase('uz').includes(needle));
     return matchesSearch && (!action || getActionKind(item.action) === action) && (!entity || item.entity === entity);
   }), [items, needle, action, entity]);
@@ -65,11 +64,6 @@ export default function AuditPage() {
       title: 'IP',
       dataIndex: 'ipAddress',
       render: (value) => value || <Typography.Text type="secondary">Avval saqlanmagan</Typography.Text>,
-    },
-    {
-      title: 'MAC',
-      dataIndex: 'macAddress',
-      render: (value) => value || <Typography.Text type="secondary">Aniqlanmaydi</Typography.Text>,
     },
     {
       title: 'Vaqti',
