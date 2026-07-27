@@ -136,6 +136,7 @@ model AuditLog {
   action    String
   entity    String
   entityId  Int?
+  ipAddress String?
   metadata  Json?
   actor     User? @relation(fields: [actorId], references: [id])
   createdAt DateTime @default(now())

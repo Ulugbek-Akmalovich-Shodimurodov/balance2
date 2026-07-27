@@ -25,7 +25,7 @@ export default function MainLayout() {
     { key: '/', icon: <DashboardOutlined />, label: 'Boshqaruv paneli' }, { key: '/assets', icon: <LaptopOutlined />, label: 'Aktivlar' },
     { key: '/users', icon: <UserOutlined />, label: 'Foydalanuvchilar' }, { key: '/departments', icon: <BankOutlined />, label: 'Bo‘limlar' },
     { key: '/maintenance', icon: <ToolOutlined />, label: <span className="menu-notification">Texnik xizmat <Badge count={newRequests} size="small"/></span> }, { key: '/reports', icon: <FileExcelOutlined />, label: 'Hisobotlar' },
-    { key: '/audit', icon: <AuditOutlined />, label: 'Audit log' },
+    { key: '/audit', icon: <AuditOutlined />, label: 'Audit jurnali' },
   ] : [
     { key: `/users/${user?.id}`, icon: <UserOutlined />, label: 'Mening profilim' },
     { key: '/assets', icon: <LaptopOutlined />, label: 'Mening qurilmalarim' },

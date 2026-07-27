@@ -18,11 +18,11 @@ export const assetService = {
   list: assetRepository.list,
   async get(id) { const asset = await assetRepository.get(id); if (!asset) throw new ApiError(404, 'Aktiv topilmadi'); return asset; },
   types: assetRepository.types,
-  async create(data, actorId) {
+  async create(data, actorId, ipAddress) {
     if (!Array.isArray(data.items) || data.items.length === 0) {
       const assignment = await prepareAssignment(data);
       const item = await assetRepository.create({ ...data, ...assignment });
-      await auditService.log(actorId, 'ASSET_CREATE', 'Asset', item.id, item);
+      await auditService.log(actorId, 'ASSET_CREATE', 'Asset', item.id, item, ipAddress);
       return { items: [item], count: 1 };
     }
 
@@ -43,10 +43,10 @@ export const assetService = {
       ...assignment,
       imageUrl: data.imageUrl?.trim() || null,
     })));
-    await Promise.all(items.map((item) => auditService.log(actorId, 'ASSET_CREATE', 'Asset', item.id, item)));
+    await Promise.all(items.map((item) => auditService.log(actorId, 'ASSET_CREATE', 'Asset', item.id, item, ipAddress)));
     return { items, count: items.length };
   },
-  async update(id, data, actorId) {
+  async update(id, data, actorId, ipAddress) {
     const assignment = await prepareAssignment(data);
     let item;
     if (data.status === 'DISPOSED') {
@@ -76,9 +76,9 @@ export const assetService = {
     } else {
       item = await assetRepository.update(id, { ...data, ...assignment });
     }
-    await auditService.log(actorId, 'ASSET_UPDATE', 'Asset', item.id, data);
+    await auditService.log(actorId, 'ASSET_UPDATE', 'Asset', item.id, data, ipAddress);
     return item;
   },
-  async remove(id, actorId) { await auditService.log(actorId, 'ASSET_DELETE', 'Asset', Number(id)); return assetRepository.remove(id); },
+  async remove(id, actorId, ipAddress) { await auditService.log(actorId, 'ASSET_DELETE', 'Asset', Number(id), {}, ipAddress); return assetRepository.remove(id); },
   async qr(id) { await this.get(id); return QRCode.toDataURL(`${process.env.CLIENT_URL || 'http://localhost:5173'}/assets/${id}`); }
 };
