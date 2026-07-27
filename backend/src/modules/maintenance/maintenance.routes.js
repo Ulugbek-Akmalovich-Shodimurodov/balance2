@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../config/db.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
+import { auditService } from '../audit/audit.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -31,15 +32,19 @@ router.post('/report', asyncHandler(async (req, res) => {
     return res.status(403).json({ message: 'Faqat o‘zingizga biriktirilgan qurilma uchun so‘rov yuborishingiz mumkin' });
   }
 
-  await prisma.asset.update({ where: { id: asset.id }, data: { status: 'BROKEN' } });
-  const log = await prisma.maintenanceLog.create({
-    data: {
-      assetId: asset.id,
-      title,
-      description,
-      reportedUserId: asset.assignedUserId,
-      reportedDepartmentId: asset.departmentId
-    }
+  const log = await prisma.$transaction(async (tx) => {
+    const assetData = { status: 'BROKEN' };
+    await tx.asset.update({ where: { id: asset.id }, data: assetData });
+    await auditService.log(req.user.id, 'ASSET_UPDATE', 'Asset', asset.id, { ...assetData, source: 'MAINTENANCE_REPORT' }, req.ip, tx);
+    return tx.maintenanceLog.create({
+      data: {
+        assetId: asset.id,
+        title,
+        description,
+        reportedUserId: asset.assignedUserId,
+        reportedDepartmentId: asset.departmentId
+      }
+    });
   });
   res.status(201).json(log);
 }));
@@ -92,16 +97,18 @@ router.post('/:id/action', authorize('ADMIN'), asyncHandler(async (req, res) => 
     const replacement = await prisma.asset.findUnique({ where: { id: Number(replacementAssetId) } });
     if (!replacement) return res.status(404).json({ message: 'Tanlangan qurilma topilmadi' });
 
-    await prisma.$transaction([
-      prisma.asset.update({
+    await prisma.$transaction(async (tx) => {
+      const brokenData = { status: 'DISPOSED', assignedUserId: null };
+      const replacementData = { assignedUserId: originalUserId, departmentId: originalDepartmentId };
+      await tx.asset.update({
         where: { id: broken.id },
-        data: { status: 'DISPOSED', assignedUserId: null }
-      }),
-      prisma.asset.update({
+        data: brokenData
+      });
+      await tx.asset.update({
         where: { id: replacement.id },
-        data: { assignedUserId: originalUserId, departmentId: originalDepartmentId }
-      }),
-      prisma.transaction.create({
+        data: replacementData
+      });
+      await tx.transaction.create({
         data: {
           assetId: replacement.id,
           userId: originalUserId,
@@ -111,8 +118,12 @@ router.post('/:id/action', authorize('ADMIN'), asyncHandler(async (req, res) => 
           type: 'ASSIGN',
           note: `${broken.inventoryNumber} o‘rniga almashtirildi`
         }
-      })
-    ]);
+      });
+      await Promise.all([
+        auditService.log(req.user.id, 'ASSET_UPDATE', 'Asset', broken.id, { ...brokenData, source: 'MAINTENANCE_REPLACED' }, req.ip, tx),
+        auditService.log(req.user.id, 'ASSET_UPDATE', 'Asset', replacement.id, { ...replacementData, source: 'MAINTENANCE_REPLACED' }, req.ip, tx)
+      ]);
+    });
 
     const updated = await prisma.maintenanceLog.update({
       where: { id: log.id },
@@ -142,17 +153,22 @@ router.post('/:id/action', authorize('ADMIN'), asyncHandler(async (req, res) => 
     assetData = { status: 'BROKEN', assignedUserId: null, departmentId: warehouse.id };
   }
 
-  await prisma.asset.update({ where: { id: log.assetId }, data: assetData });
-  const updated = await prisma.maintenanceLog.update({
-    where: { id: log.id },
-    data: {
-      status,
-      resolutionNote,
-      // Backfill older requests while their original assignment is still known.
-      reportedUserId: log.reportedUserId ?? originalUserId,
-      reportedDepartmentId: log.reportedDepartmentId ?? originalDepartmentId,
-      resolvedAt: ['REPAIRED', 'WAREHOUSED'].includes(status) ? new Date() : null
+  const updated = await prisma.$transaction(async (tx) => {
+    if (Object.keys(assetData).length) {
+      await tx.asset.update({ where: { id: log.assetId }, data: assetData });
+      await auditService.log(req.user.id, 'ASSET_UPDATE', 'Asset', log.assetId, { ...assetData, source: 'MAINTENANCE_ACTION' }, req.ip, tx);
     }
+    return tx.maintenanceLog.update({
+      where: { id: log.id },
+      data: {
+        status,
+        resolutionNote,
+        // Backfill older requests while their original assignment is still known.
+        reportedUserId: log.reportedUserId ?? originalUserId,
+        reportedDepartmentId: log.reportedDepartmentId ?? originalDepartmentId,
+        resolvedAt: ['REPAIRED', 'WAREHOUSED'].includes(status) ? new Date() : null
+      }
+    });
   });
   res.json(updated);
 }));

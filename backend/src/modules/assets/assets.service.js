@@ -88,12 +88,19 @@ export const assetService = {
             note: 'Foydalanishdan chiqarilib, Omborxonaga o‘tkazildi'
           }
         });
+        await auditService.log(actorId, 'ASSET_UPDATE', 'Asset', updated.id, data, ipAddress, tx);
         return updated;
       });
     } else {
-      item = await assetRepository.update(id, { ...data, ...assignment });
+      item = await prisma.$transaction(async (tx) => {
+        const updated = await tx.asset.update({
+          where: { id: Number(id) },
+          data: { ...data, ...assignment }
+        });
+        await auditService.log(actorId, 'ASSET_UPDATE', 'Asset', updated.id, data, ipAddress, tx);
+        return updated;
+      });
     }
-    await auditService.log(actorId, 'ASSET_UPDATE', 'Asset', item.id, data, ipAddress);
     return item;
   },
   async remove(id, actorId, ipAddress) { await auditService.log(actorId, 'ASSET_DELETE', 'Asset', Number(id), {}, ipAddress); return assetRepository.remove(id); },
