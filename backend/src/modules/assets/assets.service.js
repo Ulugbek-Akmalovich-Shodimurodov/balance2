@@ -21,8 +21,11 @@ export const assetService = {
   async create(data, actorId, ipAddress) {
     if (!Array.isArray(data.items) || data.items.length === 0) {
       const assignment = await prepareAssignment(data);
-      const item = await assetRepository.create({ ...data, ...assignment });
-      await auditService.log(actorId, 'ASSET_CREATE', 'Asset', item.id, item, ipAddress);
+      const item = await prisma.$transaction(async (tx) => {
+        const created = await tx.asset.create({ data: { ...data, ...assignment } });
+        await auditService.log(actorId, 'ASSET_CREATE', 'Asset', created.id, created, ipAddress, tx);
+        return created;
+      });
       return { items: [item], count: 1 };
     }
 
@@ -34,16 +37,30 @@ export const assetService = {
       throw new ApiError(400, 'Inventar raqamlari bo‘sh yoki takrorlangan');
     }
 
+    const existingAssets = await prisma.asset.findMany({
+      where: { inventoryNumber: { in: inventoryNumbers } },
+      select: { inventoryNumber: true }
+    });
+    if (existingAssets.length) {
+      throw new ApiError(409, `Inventar raqami allaqachon mavjud: ${existingAssets.map((item) => item.inventoryNumber).join(', ')}`);
+    }
+
     const assignment = await prepareAssignment(data);
-    const items = await assetRepository.createBatch(data.items.map((item) => ({
+    const createData = data.items.map((item) => ({
       name,
       model,
       inventoryNumber: item.inventoryNumber.trim(),
       serialNumber: item.serialNumber?.trim() || null,
       ...assignment,
       imageUrl: data.imageUrl?.trim() || null,
-    })));
-    await Promise.all(items.map((item) => auditService.log(actorId, 'ASSET_CREATE', 'Asset', item.id, item, ipAddress)));
+    }));
+    const items = await prisma.$transaction(async (tx) => {
+      const created = await Promise.all(createData.map((item) => tx.asset.create({ data: item })));
+      await Promise.all(created.map((item) =>
+        auditService.log(actorId, 'ASSET_CREATE', 'Asset', item.id, item, ipAddress, tx)
+      ));
+      return created;
+    });
     return { items, count: items.length };
   },
   async update(id, data, actorId, ipAddress) {
