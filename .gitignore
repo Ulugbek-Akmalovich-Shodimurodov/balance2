@@ -13,3 +13,4 @@ dist/
 npm-debug.log*
 
 backend/uploads/
+production.env

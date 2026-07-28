@@ -3,6 +3,7 @@ import { prisma } from '../../config/db.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { auditService } from '../audit/audit.service.js';
+import { createDeliveryAct } from '../deliveryActs/deliveryActs.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -28,7 +29,24 @@ router.post('/assign', authorize('ADMIN', 'MANAGER'), asyncHandler(async (req, r
     const assetData = { assignedUserId: employee.id, departmentId: targetDepartmentId };
     await tx.asset.update({ where: { id: asset.id }, data: assetData });
     await auditService.log(req.user.id, 'ASSET_UPDATE', 'Asset', asset.id, { ...assetData, source: 'TRANSACTION_ASSIGN' }, req.ip, tx);
-    return tx.transaction.create({ data: { assetId: asset.id, userId: employee.id, fromUserId: asset.assignedUserId, actorId: req.user.id, fromDepartmentId: asset.departmentId, toDepartmentId: targetDepartmentId, type: 'ASSIGN', note } });
+    const transaction = await tx.transaction.create({ data: { assetId: asset.id, userId: employee.id, fromUserId: asset.assignedUserId, actorId: req.user.id, fromDepartmentId: asset.departmentId, toDepartmentId: targetDepartmentId, type: 'ASSIGN', note } });
+    const [creator, department, assignedAssets] = await Promise.all([
+      tx.user.findUnique({ where: { id: req.user.id } }),
+      targetDepartmentId ? tx.department.findUnique({ where: { id: targetDepartmentId } }) : null,
+      tx.asset.findMany({
+        where: { assignedUserId: employee.id },
+        orderBy: { id: 'asc' },
+      }),
+    ]);
+    await createDeliveryAct(tx, {
+      transactionId: transaction.id,
+      asset,
+      assets: assignedAssets,
+      recipient: employee,
+      creator,
+      department,
+    });
+    return transaction;
   });
   res.status(201).json(created);
 }));

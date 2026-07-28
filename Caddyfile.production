@@ -1,0 +1,9 @@
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy backend:5000
+}
+
+{$OFFICE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy onlyoffice-documentserver:80
+}

@@ -1,0 +1,2 @@
+ALTER TABLE "DeliveryAct" ADD COLUMN "documentText" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "DeliveryAct" ALTER COLUMN "documentText" DROP DEFAULT;

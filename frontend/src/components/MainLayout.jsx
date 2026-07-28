@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppstoreOutlined, AuditOutlined, BankOutlined, BellOutlined, DashboardOutlined, FileExcelOutlined, LaptopOutlined, LogoutOutlined, MenuOutlined, ToolOutlined, UserOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, AuditOutlined, BankOutlined, BellOutlined, DashboardOutlined, FileExcelOutlined, FileProtectOutlined, LaptopOutlined, LogoutOutlined, MenuOutlined, ToolOutlined, UserOutlined } from '@ant-design/icons';
 import { Avatar, Badge, Button, Drawer, Dropdown, Layout, Menu, Tooltip, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -26,10 +26,12 @@ export default function MainLayout() {
     { key: '/', icon: <DashboardOutlined />, label: 'Boshqaruv paneli' }, { key: '/assets', icon: <LaptopOutlined />, label: 'Aktivlar' },
     { key: '/users', icon: <UserOutlined />, label: 'Foydalanuvchilar' }, { key: '/departments', icon: <BankOutlined />, label: 'Bo‘limlar' },
     { key: '/maintenance', icon: <ToolOutlined />, label: <span className="menu-notification">Texnik xizmat <Badge count={newRequests} size="small"/></span> }, { key: '/reports', icon: <FileExcelOutlined />, label: 'Hisobotlar' },
+    { key: '/delivery-acts', icon: <FileProtectOutlined />, label: 'Dalolatnomalar' },
     { key: '/audit', icon: <AuditOutlined />, label: 'Audit jurnali' },
   ] : [
     { key: `/users/${user?.id}`, icon: <UserOutlined />, label: 'Mening profilim' },
     { key: '/assets', icon: <LaptopOutlined />, label: 'Mening qurilmalarim' },
+    { key: '/delivery-acts', icon: <FileProtectOutlined />, label: 'Dalolatnomalar' },
     { key: '/maintenance', icon: <ToolOutlined />, label: 'Texnik xizmat' },
   ];
   const avatarMenu = { items: [{ key: 'profile', icon: <UserOutlined />, label: 'Mening profilim' }, { type: 'divider' }, { key: 'logout', icon: <LogoutOutlined />, label: 'Chiqish' }], onClick: ({ key }) => { if (key === 'logout') signOut(); if (key === 'profile') navigate(`/users/${user?.id}`); } };
