@@ -12,6 +12,7 @@ const employeePassword = 'TestEmployee123!';
 let admin;
 let employee;
 let asset;
+let secondAsset;
 let existingAsset;
 let department;
 let deliveryActId;
@@ -90,6 +91,16 @@ try {
       assignedUserId: null,
     },
   });
+  secondAsset = await prisma.asset.create({
+    data: {
+      name: 'Test printer',
+      model: 'Dalolatnoma Test Printer',
+      inventoryNumber: `ACT-TEST-SECOND-${suffix}`,
+      serialNumber: `SER-SECOND-${suffix}`,
+      departmentId: department.id,
+      assignedUserId: null,
+    },
+  });
   existingAsset = await prisma.asset.create({
     data: {
       name: 'Avvalgi test monitor',
@@ -102,19 +113,33 @@ try {
   });
 
   const adminToken = await login(adminLogin, adminPassword);
-  await request('/transactions/assign', {
+  await request('/transactions/assign-batch', {
+    method: 'POST',
+    token: adminToken,
+    expected: 409,
+    body: JSON.stringify({ assetIds: [asset.id, existingAsset.id], userId: employee.id, note: 'Rollback test' }),
+  });
+  const assetAfterRejectedBatch = await prisma.asset.findUnique({ where: { id: asset.id } });
+  const actsAfterRejectedBatch = await prisma.deliveryAct.count({ where: { recipientId: employee.id } });
+  if (assetAfterRejectedBatch.assignedUserId || actsAfterRejectedBatch) {
+    throw new Error('Band qurilma qatnashgan batch to‘liq bekor qilinmadi');
+  }
+
+  await request('/transactions/assign-batch', {
     method: 'POST',
     token: adminToken,
     expected: 201,
-    body: JSON.stringify({ assetId: asset.id, userId: employee.id, note: 'Avtomatik test' }),
+    body: JSON.stringify({ assetIds: [asset.id, secondAsset.id], userId: employee.id, note: 'Avtomatik batch test' }),
   });
 
   const acts = await (await request(`/delivery-acts/user/${employee.id}`, { token: adminToken })).json();
   const act = acts.find((item) => item.assetId === asset.id);
   if (!act || act.status !== 'DRAFT') throw new Error('Avtomatik qoralama dalolatnoma yaratilmadi');
-  if (act.snapshot?.assets?.length !== 2) {
-    throw new Error('Dalolatnomaga xodimning barcha qurilmalari kiritilmadi');
+  if (act.snapshot?.assets?.length !== 3) {
+    throw new Error('Bitta dalolatnomaga xodimning barcha qurilmalari kiritilmadi');
   }
+  const createdActs = acts.filter((item) => [asset.id, secondAsset.id].includes(item.assetId));
+  if (createdActs.length !== 1) throw new Error('Batch biriktirish uchun bittadan ortiq dalolatnoma yaratildi');
   deliveryActId = act.id;
 
   const editorConfig = await (await request(`/delivery-acts/${act.id}/editor-config`, { token: adminToken })).json();
@@ -177,7 +202,7 @@ try {
 
   console.log(`OK: ${signed.number} avtomatik yaratildi, ONLYOFFICE config olindi, yuborildi, parol bilan imzolandi, DOCX va PDF olindi.`);
 } finally {
-  if (admin || employee || asset || existingAsset) {
+  if (admin || employee || asset || secondAsset || existingAsset) {
     await prisma.$transaction(async (tx) => {
       if (admin || employee) {
         await tx.auditLog.deleteMany({
@@ -189,8 +214,8 @@ try {
           },
         });
       }
-      if (asset || existingAsset) {
-        const assetIds = [asset?.id, existingAsset?.id].filter(Boolean);
+      if (asset || secondAsset || existingAsset) {
+        const assetIds = [asset?.id, secondAsset?.id, existingAsset?.id].filter(Boolean);
         await tx.deliveryAct.deleteMany({ where: { assetId: { in: assetIds } } });
         await tx.transaction.deleteMany({ where: { assetId: { in: assetIds } } });
         await tx.asset.deleteMany({ where: { id: { in: assetIds } } });

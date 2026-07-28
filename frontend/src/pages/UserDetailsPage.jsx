@@ -160,15 +160,15 @@ export default function UserDetailsPage() {
     }
   };
 
-  const assignAsset = async ({ assetId }) => {
+  const assignAsset = async ({ assetIds }) => {
     setAssigning(true);
     try {
-      await api.post('/transactions/assign', {
-        assetId,
+      await api.post('/transactions/assign-batch', {
+        assetIds,
         userId: Number(id),
         note: 'Xodim kartasi orqali biriktirildi',
       });
-      message.success('Qurilma biriktirildi va dalolatnoma avtomatik yaratildi');
+      message.success(`${assetIds.length} ta qurilma biriktirildi va bitta dalolatnoma yaratildi`);
       setAssignOpen(false);
       assignForm.resetFields();
       await load();
@@ -520,11 +520,13 @@ export default function UserDetailsPage() {
         confirmLoading={assigning}
       >
         <Form form={assignForm} layout="vertical" onFinish={assignAsset}>
-          <Form.Item name="assetId" label="Omborxonadagi qurilma" rules={[{ required: true, message: 'Qurilmani tanlang' }]}>
+          <Form.Item name="assetIds" label="Omborxonadagi qurilmalar" rules={[{ required: true, message: 'Kamida bitta qurilmani tanlang' }]}>
             <Select
+              mode="multiple"
               showSearch
               optionFilterProp="label"
-              placeholder="Qurilmani tanlang"
+              placeholder="Bir yoki bir nechta qurilmani tanlang"
+              maxTagCount="responsive"
               notFoundContent="Omborxonada bo‘sh qurilma mavjud emas"
               options={warehouseAssets.map((asset) => ({
                 value: asset.id,
