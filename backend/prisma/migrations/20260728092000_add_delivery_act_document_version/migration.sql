@@ -1,0 +1,1 @@
+ALTER TABLE "DeliveryAct" ADD COLUMN "documentVersion" INTEGER NOT NULL DEFAULT 1;

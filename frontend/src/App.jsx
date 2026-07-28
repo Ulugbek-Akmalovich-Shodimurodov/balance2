@@ -13,6 +13,8 @@ import DepartmentDetailsPage from './pages/DepartmentDetailsPage.jsx';
 import MaintenancePage from './pages/MaintenancePage.jsx';
 import AuditPage from './pages/AuditPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
+import DeliveryActVerifyPage from './pages/DeliveryActVerifyPage.jsx';
+import DeliveryActsPage from './pages/DeliveryActsPage.jsx';
 
 function PrivateRoute({ children }) {
   const token = useSelector((s) => s.auth.token);
@@ -27,6 +29,7 @@ function HomeRoute() {
 export default function App() {
   return <BrowserRouter><Routes>
     <Route path="/login" element={<LoginPage />} />
+    <Route path="/verify-delivery-act/:id" element={<DeliveryActVerifyPage />} />
     <Route path="/" element={<PrivateRoute><MainLayout /></PrivateRoute>}>
       <Route index element={<HomeRoute />} />
       <Route path="assets" element={<AssetsPage />} />
@@ -37,6 +40,7 @@ export default function App() {
       <Route path="departments/:id" element={<DepartmentDetailsPage />} />
       <Route path="maintenance" element={<MaintenancePage />} />
       <Route path="reports" element={<ReportsPage />} />
+      <Route path="delivery-acts" element={<DeliveryActsPage />} />
       <Route path="audit" element={<AuditPage />} />
     </Route>
   </Routes></BrowserRouter>;
