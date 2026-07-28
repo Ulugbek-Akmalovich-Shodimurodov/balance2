@@ -66,6 +66,7 @@ export default function UserDetailsPage() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
+  const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
   const [assignForm] = Form.useForm();
   const [signForm] = Form.useForm();
   const [profileForm] = Form.useForm();
@@ -355,13 +356,27 @@ export default function UserDetailsPage() {
             <Tag color="blue">{user.role}</Tag>
           </div>
         </div>
+        {!isAdmin && isOwnProfile && (
+          <Button
+            className="profile-settings-trigger"
+            ghost
+            icon={<EditOutlined />}
+            onClick={() => setProfileSettingsOpen(true)}
+          >
+            Profil sozlamalari
+          </Button>
+        )}
         <div className="user-stat"><LaptopOutlined /><span><strong>{assets.length}</strong>Hozirgi qurilmalar</span></div>
       </Card>
 
       {!isAdmin && isOwnProfile && (
-        <Card
+        <Modal
+          open={profileSettingsOpen}
+          onCancel={() => setProfileSettingsOpen(false)}
+          footer={null}
+          width={1120}
           title={<Space><EditOutlined /> Profil sozlamalari</Space>}
-          className="user-section profile-settings-card"
+          className="profile-settings-modal"
         >
           <Row gutter={[32, 24]}>
             <Col xs={24} lg={15}>
@@ -471,7 +486,7 @@ export default function UserDetailsPage() {
               </div>
             </Col>
           </Row>
-        </Card>
+        </Modal>
       )}
 
       <Card
