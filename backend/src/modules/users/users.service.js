@@ -48,6 +48,58 @@ export const userService = {
       return item;
     });
   },
+  async updateSelf(userId, data, ipAddress) {
+    const fullName = data.fullName?.trim();
+    if (!fullName || fullName.length < 3 || fullName.length > 120) {
+      throw new ApiError(400, 'Ism-familiya 3 dan 120 tagacha belgidan iborat bo‘lishi kerak');
+    }
+    const phone = data.phone?.trim() || null;
+    const imageUrl = data.imageUrl?.trim() || null;
+    if (imageUrl && !/^data:image\/jpeg;base64,|^https:\/\//i.test(imageUrl)) {
+      throw new ApiError(400, 'Profil rasmi formati noto‘g‘ri');
+    }
+    const updateData = {
+      fullName,
+      phone,
+      imageUrl,
+      ...normalizeIdentity(data),
+    };
+    return prisma.$transaction(async (tx) => {
+      const item = await userRepository.update(userId, updateData, tx);
+      await auditService.log(
+        userId,
+        'USER_SELF_UPDATE',
+        'User',
+        item.id,
+        { objectName: item.fullName },
+        ipAddress,
+        tx,
+      );
+      return item;
+    });
+  },
+  async changeOwnPassword(userId, { currentPassword, newPassword }, ipAddress) {
+    const user = await prisma.user.findUnique({ where: { id: Number(userId) } });
+    if (!user || !(await bcrypt.compare(currentPassword, user.password))) {
+      throw new ApiError(400, 'Joriy parol noto‘g‘ri');
+    }
+    if (await bcrypt.compare(newPassword, user.password)) {
+      throw new ApiError(400, 'Yangi parol joriy paroldan farq qilishi kerak');
+    }
+    const password = await bcrypt.hash(newPassword, 10);
+    return prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: Number(userId) }, data: { password } });
+      await auditService.log(
+        userId,
+        'USER_PASSWORD_UPDATE',
+        'User',
+        Number(userId),
+        { objectName: user.fullName },
+        ipAddress,
+        tx,
+      );
+    });
+  },
   async remove(id, actorId, ipAddress) {
     return prisma.$transaction(async (tx) => {
       const item = await tx.user.findUnique({ where: { id: Number(id) }, select: { id:true, fullName:true } });

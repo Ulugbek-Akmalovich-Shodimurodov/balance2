@@ -1,35 +1,44 @@
 import React, { useEffect, useState } from 'react';
 import {
+  EditOutlined,
   EyeOutlined,
   FilePdfOutlined,
   FileWordOutlined,
   HistoryOutlined,
   LaptopOutlined,
+  LockOutlined,
   PhoneOutlined,
   PlusOutlined,
+  SaveOutlined,
+  UploadOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import {
   Button,
   Card,
   Checkbox,
+  Col,
+  Divider,
   Empty,
   Form,
   Input,
   message,
   Modal,
+  Row,
   Select,
   Space,
   Table,
   Tag,
   Tooltip,
   Typography,
+  Upload,
 } from 'antd';
 import { useParams } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { api, downloadFile } from '../api/client.js';
 import OnlyOfficeEditor from '../components/OnlyOfficeEditor.jsx';
 import SafeImage from '../components/SafeImage.jsx';
+import { updateCurrentUser } from '../store/store.js';
 
 const actStatus = {
   DRAFT: { label: 'Qoralama', color: 'default' },
@@ -40,8 +49,10 @@ const actStatus = {
 
 export default function UserDetailsPage() {
   const { id } = useParams();
+  const dispatch = useDispatch();
   const currentUser = useSelector((state) => state.auth.user);
   const isAdmin = currentUser?.role === 'ADMIN';
+  const isOwnProfile = currentUser?.id === Number(id);
   const [user, setUser] = useState();
   const [acts, setActs] = useState([]);
   const [warehouseAssets, setWarehouseAssets] = useState([]);
@@ -52,8 +63,13 @@ export default function UserDetailsPage() {
   const [editorData, setEditorData] = useState();
   const [editorLoading, setEditorLoading] = useState(false);
   const [editorInstanceId, setEditorInstanceId] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const [assignForm] = Form.useForm();
   const [signForm] = Form.useForm();
+  const [profileForm] = Form.useForm();
+  const [passwordForm] = Form.useForm();
 
   const load = async () => {
     const [userResponse, actsResponse] = await Promise.all([
@@ -67,6 +83,71 @@ export default function UserDetailsPage() {
   useEffect(() => {
     load().catch((error) => message.error(error.response?.data?.message || 'Ma’lumotlarni yuklab bo‘lmadi'));
   }, [id]);
+
+  useEffect(() => {
+    if (!user || !isOwnProfile) return;
+    profileForm.setFieldsValue({
+      fullName: user.fullName,
+      phone: user.phone,
+      passportSeries: user.passportSeries,
+      pinfl: user.pinfl,
+      imageUrl: user.imageUrl,
+    });
+  }, [user, isOwnProfile, profileForm]);
+
+  const saveProfile = async (values) => {
+    setProfileSaving(true);
+    try {
+      const payload = {
+        fullName: values.fullName.trim(),
+        phone: values.phone?.trim() || null,
+        passportSeries: values.passportSeries?.replace(/[\s-]/g, '').toUpperCase() || null,
+        pinfl: values.pinfl?.replace(/\s/g, '') || null,
+        imageUrl: values.imageUrl || null,
+      };
+      const { data } = await api.patch('/users/me', payload);
+      setUser((previous) => ({ ...previous, ...data }));
+      dispatch(updateCurrentUser(data));
+      message.success('Profil ma’lumotlari yangilandi');
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Profilni yangilab bo‘lmadi');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const changePassword = async (values) => {
+    setPasswordSaving(true);
+    try {
+      await api.patch('/users/me/password', {
+        currentPassword: values.currentPassword,
+        newPassword: values.newPassword,
+      });
+      passwordForm.resetFields();
+      message.success('Parol muvaffaqiyatli yangilandi');
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Parolni yangilab bo‘lmadi');
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
+  const uploadProfileImage = async ({ file, onSuccess, onError }) => {
+    const body = new FormData();
+    body.append('image', file);
+    setImageUploading(true);
+    try {
+      const { data } = await api.post('/users/me/upload-image', body);
+      profileForm.setFieldValue('imageUrl', data.imageUrl);
+      onSuccess?.(data);
+      message.success('Profil rasmi tayyorlandi. Saqlash tugmasini bosing');
+    } catch (error) {
+      onError?.(error);
+      message.error(error.response?.data?.message || 'Rasmni yuklab bo‘lmadi');
+    } finally {
+      setImageUploading(false);
+    }
+  };
 
   const openAssign = async () => {
     try {
@@ -276,6 +357,122 @@ export default function UserDetailsPage() {
         </div>
         <div className="user-stat"><LaptopOutlined /><span><strong>{assets.length}</strong>Hozirgi qurilmalar</span></div>
       </Card>
+
+      {!isAdmin && isOwnProfile && (
+        <Card
+          title={<Space><EditOutlined /> Profil sozlamalari</Space>}
+          className="user-section profile-settings-card"
+        >
+          <Row gutter={[32, 24]}>
+            <Col xs={24} lg={15}>
+              <Form form={profileForm} layout="vertical" onFinish={saveProfile}>
+                <Row gutter={16}>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      name="fullName"
+                      label="Ism-familiya"
+                      rules={[
+                        { required: true, message: 'Ism-familiyangizni kiriting' },
+                        { min: 3, max: 120, message: '3 dan 120 tagacha belgi kiriting' },
+                      ]}
+                    >
+                      <Input prefix={<UserOutlined />} />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item name="phone" label="Telefon raqami">
+                      <Input prefix={<PhoneOutlined />} placeholder="+998 90 123 45 67" maxLength={40} />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      name="passportSeries"
+                      label="Pasport seria raqami"
+                      rules={[{ pattern: /^[A-Za-z]{2}\d{7}$/, message: 'Masalan: AA1234567' }]}
+                    >
+                      <Input placeholder="AA1234567" maxLength={9} style={{ textTransform: 'uppercase' }} />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      name="pinfl"
+                      label="JShShIR"
+                      rules={[{ pattern: /^\d{14}$/, message: 'JShShIR 14 ta raqamdan iborat bo‘lishi kerak' }]}
+                    >
+                      <Input placeholder="14 ta raqam" maxLength={14} inputMode="numeric" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item name="imageUrl" hidden><Input /></Form.Item>
+                <Form.Item label="Profil rasmi">
+                  <Space wrap>
+                    <Upload
+                      accept="image/*"
+                      maxCount={1}
+                      customRequest={uploadProfileImage}
+                      showUploadList={{ showRemoveIcon: false }}
+                    >
+                      <Button icon={<UploadOutlined />} loading={imageUploading}>Rasm tanlash</Button>
+                    </Upload>
+                    <Typography.Text type="secondary">JPG yoki PNG, maksimal 5 MB</Typography.Text>
+                  </Space>
+                </Form.Item>
+                <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={profileSaving}>
+                  O‘zgarishlarni saqlash
+                </Button>
+              </Form>
+            </Col>
+            <Col xs={24} lg={9}>
+              <div className="profile-password-panel">
+                <Typography.Title level={5}><LockOutlined /> Parolni almashtirish</Typography.Title>
+                <Typography.Paragraph type="secondary">
+                  Xavfsizlik uchun avval joriy parolingizni kiriting.
+                </Typography.Paragraph>
+                <Divider />
+                <Form form={passwordForm} layout="vertical" onFinish={changePassword}>
+                  <Form.Item
+                    name="currentPassword"
+                    label="Joriy parol"
+                    rules={[{ required: true, message: 'Joriy parolingizni kiriting' }]}
+                  >
+                    <Input.Password autoComplete="current-password" />
+                  </Form.Item>
+                  <Form.Item
+                    name="newPassword"
+                    label="Yangi parol"
+                    rules={[
+                      { required: true, message: 'Yangi parolni kiriting' },
+                      { min: 8, message: 'Yangi parol kamida 8 belgidan iborat bo‘lsin' },
+                    ]}
+                  >
+                    <Input.Password autoComplete="new-password" />
+                  </Form.Item>
+                  <Form.Item
+                    name="confirmPassword"
+                    label="Yangi parolni takrorlang"
+                    dependencies={['newPassword']}
+                    rules={[
+                      { required: true, message: 'Yangi parolni takrorlang' },
+                      ({ getFieldValue }) => ({
+                        validator(_, value) {
+                          return !value || getFieldValue('newPassword') === value
+                            ? Promise.resolve()
+                            : Promise.reject(new Error('Parollar bir xil emas'));
+                        },
+                      }),
+                    ]}
+                  >
+                    <Input.Password autoComplete="new-password" />
+                  </Form.Item>
+                  <Button htmlType="submit" icon={<LockOutlined />} loading={passwordSaving}>
+                    Parolni yangilash
+                  </Button>
+                </Form>
+              </div>
+            </Col>
+          </Row>
+        </Card>
+      )}
 
       <Card
         title="Hozir foydalanayotgan qurilmalar"

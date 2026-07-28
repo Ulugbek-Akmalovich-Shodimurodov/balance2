@@ -13,7 +13,7 @@ export default function MainLayout() {
   const [profile, setProfile] = useState(user);
   const [newRequests, setNewRequests] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  useEffect(() => { if (user?.id) api.get(`/users/${user.id}`).then((response) => setProfile(response.data)).catch(() => {}); }, [user?.id]);
+  useEffect(() => { if (user?.id) api.get(`/users/${user.id}`).then((response) => setProfile(response.data)).catch(() => setProfile(user)); }, [user]);
   const signOut = () => { dispatch(logout()); navigate('/login'); };
   const isAdmin = user?.role === 'ADMIN';
   useEffect(() => {
