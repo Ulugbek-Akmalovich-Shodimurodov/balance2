@@ -40,3 +40,4 @@ body{margin:0;background:#f5f7fb}.app-layout{height:100vh;overflow:hidden}.app-l
 .act-editor-shell{position:relative;height:72vh;min-height:620px;background:#d9d9d9}
 .onlyoffice-loading{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;background:#f3f5f8;color:#526476;font-weight:600}
 @media(max-width:768px){.act-editor-shell{height:68vh;min-height:520px}}
+.profile-settings-card .ant-card-head{background:#f7faff}.profile-password-panel{height:100%;padding:20px;border:1px solid #e8edf5;border-radius:12px;background:#fafcff}.profile-password-panel .ant-typography{margin-top:0}
