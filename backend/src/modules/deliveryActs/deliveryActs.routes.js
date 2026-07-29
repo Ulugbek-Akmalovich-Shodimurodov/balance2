@@ -102,15 +102,23 @@ const verificationUrlFor = (act) => {
   return `${env.clientUrl.replace(/\/$/, '')}/verify-delivery-act/${act.id}?token=${encodeURIComponent(token)}`;
 };
 
+const signedAtFormatter = new Intl.DateTimeFormat('uz-UZ', {
+  timeZone: 'Asia/Tashkent',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
 const signedStampText = (act) => {
-  const date = new Date(act.signedAt);
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
-  const time = [date.getHours(), date.getMinutes(), date.getSeconds()]
-    .map((value) => String(value).padStart(2, '0'))
-    .join(':');
-  return `ELEKTRON IMZOLANGAN: ${day}/${month}/${year}, ${time}`;
+  const parts = Object.fromEntries(
+    signedAtFormatter.formatToParts(new Date(act.signedAt))
+      .map(({ type, value }) => [type, value]),
+  );
+  return `ELEKTRON IMZOLANGAN: ${parts.day}/${parts.month}/${parts.year}, ${parts.hour}:${parts.minute}:${parts.second}`;
 };
 
 const addVerificationFooter = async (pdfBuffer, act) => {
@@ -163,7 +171,7 @@ const addVerificationFooter = async (pdfBuffer, act) => {
     font: bold,
     maxWidth: columnWidth - 20,
   });
-  page.drawText(`${text(act.number)} | ${text(new Date(act.signedAt).toLocaleString('uz-UZ'))}`, {
+  page.drawText(`${text(act.number)} | ${text(signedAtFormatter.format(new Date(act.signedAt)))}`, {
     x: margin + columnWidth,
     y: footerBottom + 5,
     size: 6.5,

@@ -1,0 +1,59 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - ${PRODUCTION_ENV_FILE:-./production.env}
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      ONLYOFFICE_BACKEND_URL: http://backend:5000
+      DELIVERY_ACT_STORAGE_DIR: /data/delivery-acts
+    volumes:
+      - delivery_act_files:/data/delivery-acts
+    depends_on:
+      onlyoffice-documentserver:
+        condition: service_healthy
+
+  onlyoffice-documentserver:
+    image: onlyoffice/documentserver:latest
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:?ONLYOFFICE_JWT_SECRET is required}
+      JWT_HEADER: Authorization
+      JWT_IN_BODY: "true"
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+      ALLOW_META_IP_ADDRESS: "false"
+    expose:
+      - "80"
+    volumes:
+      - onlyoffice_logs:/var/log/onlyoffice
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_lib:/var/lib/onlyoffice
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 10
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is required}
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    depends_on:
+      backend:
+        condition: service_healthy
+      onlyoffice-documentserver:
+        condition: service_healthy
+
+volumes:
+  delivery_act_files:
+  onlyoffice_logs:
+  onlyoffice_data:
+  onlyoffice_lib:
