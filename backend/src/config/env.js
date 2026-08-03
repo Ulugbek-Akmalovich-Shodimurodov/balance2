@@ -6,6 +6,10 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET || 'dev-secret',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1d',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+  additionalClientUrls: (process.env.ADDITIONAL_CLIENT_URLS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
   onlyOfficePublicUrl: process.env.ONLYOFFICE_PUBLIC_URL || 'http://localhost:8082',
   onlyOfficeBackendUrl: process.env.ONLYOFFICE_BACKEND_URL || 'http://host.docker.internal:5000',
   onlyOfficeJwtSecret: process.env.ONLYOFFICE_JWT_SECRET || '',

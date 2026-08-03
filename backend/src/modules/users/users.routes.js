@@ -1,17 +1,22 @@
 import { Router } from 'express';
 import sharp from 'sharp';
 import { z } from 'zod';
-import { authenticate, authorize } from '../../middlewares/auth.js';
+import { authenticate, authorizeStructureAdmin } from '../../middlewares/auth.js';
 import { listUsers, getUser, createUser, updateUser, updateSelf, changeOwnPassword, deleteUser } from './users.controller.js';
 import { uploadAssetImage } from '../../middlewares/upload.js';
+import { uploadAssetExcel } from '../../middlewares/upload.js';
 import { validate } from '../../middlewares/validate.js';
 import { ApiError } from '../../utils/apiError.js';
+import { asyncHandler } from '../../utils/asyncHandler.js';
+import { buildUserImportTemplate, importUsers, validateUserImport } from './users.import.js';
 const router = Router();
 router.use(authenticate);
 const selfProfileSchema = z.object({
   body: z.object({
     fullName: z.string().trim().min(3).max(120),
     phone: z.string().trim().max(40).nullable().optional(),
+    servicePhone: z.string().trim().max(40).nullable().optional(),
+    extensionNumber: z.string().trim().max(12).regex(/^\d+$/, 'Ichki raqam faqat raqamlardan iborat bo‘lishi kerak').nullable().optional(),
     passportSeries: z.string().trim().regex(/^[A-Za-z]{2}\d{7}$/, 'Pasport seria raqami AA1234567 formatida bo‘lishi kerak').nullable().optional(),
     pinfl: z.string().trim().regex(/^\d{14}$/, 'JShShIR 14 ta raqamdan iborat bo‘lishi kerak').nullable().optional(),
     imageUrl: z.string().max(2_500_000).nullable().optional(),
@@ -42,6 +47,24 @@ router.post('/me/upload-image', uploadAssetImage.single('image'), async (req, re
     next(new ApiError(400, 'Rasm formatini qayta ishlab bo‘lmadi'));
   }
 });
-router.get('/', authorize('ADMIN','MANAGER'), listUsers); router.get('/:id', getUser);
-router.post('/', authorize('ADMIN'), createUser); router.put('/:id', authorize('ADMIN'), updateUser); router.delete('/:id', authorize('ADMIN'), deleteUser);
+router.get('/import-template', authorizeStructureAdmin, asyncHandler(async (req, res) => {
+  const buffer = await buildUserImportTemplate(req.user);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="xodimlar-import-shabloni.xlsx"');
+  res.send(Buffer.from(buffer));
+}));
+router.post('/import', authorizeStructureAdmin, uploadAssetExcel.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'images', maxCount: 1 },
+]), asyncHandler(async (req, res) => {
+  const excel = req.files?.file?.[0];
+  const images = req.files?.images?.[0];
+  if (!excel) throw new ApiError(400, 'Excel faylini tanlang');
+  if (excel.size > 15 * 1024 * 1024) throw new ApiError(400, 'Excel fayli 15 MB dan oshmasligi kerak');
+  if (req.query.commit === 'true') return res.status(201).json(await importUsers(excel.buffer, req.user, req.ip, images?.buffer));
+  const result = await validateUserImport(excel.buffer, req.user, images?.buffer);
+  res.json({ summary: result.summary, errors: result.errors, errorsTruncated: result.errorsTruncated, images: result.images });
+}));
+router.get('/', authorizeStructureAdmin, listUsers); router.get('/:id', getUser);
+router.post('/', authorizeStructureAdmin, createUser); router.put('/:id', authorizeStructureAdmin, updateUser); router.delete('/:id', authorizeStructureAdmin, deleteUser);
 export default router;

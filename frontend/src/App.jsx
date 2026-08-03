@@ -8,7 +8,7 @@ import AssetsPage from './pages/AssetsPage.jsx';
 import AssetDetailsPage from './pages/AssetDetailsPage.jsx';
 import UsersPage from './pages/UsersPage.jsx';
 import UserDetailsPage from './pages/UserDetailsPage.jsx';
-import DepartmentsPage from './pages/DepartmentsPage.jsx';
+import OrganizationStructurePage from './pages/OrganizationStructurePage.jsx';
 import DepartmentDetailsPage from './pages/DepartmentDetailsPage.jsx';
 import MaintenancePage from './pages/MaintenancePage.jsx';
 import AuditPage from './pages/AuditPage.jsx';
@@ -23,7 +23,8 @@ function PrivateRoute({ children }) {
 
 function HomeRoute() {
   const user = useSelector((state) => state.auth.user);
-  return user?.role === 'ADMIN' ? <DashboardPage /> : <Navigate to={`/users/${user?.id}`} replace />;
+  if (['SUPER_ADMIN', 'ADMIN', 'ORGANIZATION_ADMIN'].includes(user?.role)) return <DashboardPage />;
+  return <Navigate to={`/users/${user?.id}`} replace />;
 }
 
 export default function App() {
@@ -36,7 +37,10 @@ export default function App() {
       <Route path="assets/:id" element={<AssetDetailsPage />} />
       <Route path="users" element={<UsersPage />} />
       <Route path="users/:id" element={<UserDetailsPage />} />
-      <Route path="departments" element={<DepartmentsPage />} />
+      <Route path="departments" element={<Navigate to="/organization?tab=departments" replace />} />
+      <Route path="positions" element={<Navigate to="/organization?tab=positions" replace />} />
+      <Route path="organization" element={<OrganizationStructurePage />} />
+      <Route path="organizations" element={<Navigate to="/organization?tab=organizations" replace />} />
       <Route path="departments/:id" element={<DepartmentDetailsPage />} />
       <Route path="maintenance" element={<MaintenancePage />} />
       <Route path="reports" element={<ReportsPage />} />

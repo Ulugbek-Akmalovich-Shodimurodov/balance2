@@ -14,15 +14,33 @@ const prepareAssignment = async (data) => {
     assignedUserId: isWarehouse ? null : (data.assignedUserId ? Number(data.assignedUserId) : null)
   };
 };
+const normalizeYear = (value, required = false) => {
+  if (value === undefined || value === null || value === '') {
+    if (required) throw new ApiError(400, 'Qurilma yilini kiriting');
+    return null;
+  }
+  const year = Number(value);
+  if (!Number.isInteger(year) || year < 1900 || year > 2100) {
+    throw new ApiError(400, 'Qurilma yili 1900–2100 oralig‘ida bo‘lishi kerak');
+  }
+  return year;
+};
 export const assetService = {
   list: assetRepository.list,
   async get(id) { const asset = await assetRepository.get(id); if (!asset) throw new ApiError(404, 'Aktiv topilmadi'); return asset; },
   types: assetRepository.types,
+  department: (id) => prisma.department.findUnique({ where: { id: Number(id) } }),
   async create(data, actorId, ipAddress) {
     if (!Array.isArray(data.items) || data.items.length === 0) {
       const assignment = await prepareAssignment(data);
+      const normalizedData = {
+        ...data,
+        manufactureYear: normalizeYear(data.manufactureYear, true),
+      };
+      delete normalizedData.serialNumber;
+      delete normalizedData.items;
       const item = await prisma.$transaction(async (tx) => {
-        const created = await tx.asset.create({ data: { ...data, ...assignment } });
+        const created = await tx.asset.create({ data: { ...normalizedData, ...assignment } });
         await auditService.log(actorId, 'ASSET_CREATE', 'Asset', created.id, created, ipAddress, tx);
         return created;
       });
@@ -50,7 +68,7 @@ export const assetService = {
       name,
       model,
       inventoryNumber: item.inventoryNumber.trim(),
-      serialNumber: item.serialNumber?.trim() || null,
+      manufactureYear: normalizeYear(item.manufactureYear, true),
       ...assignment,
       imageUrl: data.imageUrl?.trim() || null,
     }));
@@ -64,9 +82,16 @@ export const assetService = {
     return { items, count: items.length };
   },
   async update(id, data, actorId, ipAddress) {
+    const normalizedData = {
+      ...data,
+      ...(Object.prototype.hasOwnProperty.call(data, 'manufactureYear')
+        ? { manufactureYear: normalizeYear(data.manufactureYear) }
+        : {}),
+    };
+    delete normalizedData.serialNumber;
     const assignment = await prepareAssignment(data);
     let item;
-    if (data.status === 'DISPOSED') {
+    if (normalizedData.status === 'DISPOSED') {
       const [current, warehouse] = await Promise.all([
         this.get(id),
         prisma.department.findFirst({ where: { name: { equals: 'Omborxona', mode: 'insensitive' } } })
@@ -75,7 +100,7 @@ export const assetService = {
       item = await prisma.$transaction(async (tx) => {
         const updated = await tx.asset.update({
           where: { id: Number(id) },
-          data: { ...data, ...assignment, departmentId: warehouse.id, assignedUserId: null }
+          data: { ...normalizedData, ...assignment, departmentId: warehouse.id, assignedUserId: null }
         });
         await tx.transaction.create({
           data: {
@@ -88,16 +113,16 @@ export const assetService = {
             note: 'Foydalanishdan chiqarilib, Omborxonaga o‘tkazildi'
           }
         });
-        await auditService.log(actorId, 'ASSET_UPDATE', 'Asset', updated.id, data, ipAddress, tx);
+        await auditService.log(actorId, 'ASSET_UPDATE', 'Asset', updated.id, normalizedData, ipAddress, tx);
         return updated;
       });
     } else {
       item = await prisma.$transaction(async (tx) => {
         const updated = await tx.asset.update({
           where: { id: Number(id) },
-          data: { ...data, ...assignment }
+          data: { ...normalizedData, ...assignment }
         });
-        await auditService.log(actorId, 'ASSET_UPDATE', 'Asset', updated.id, data, ipAddress, tx);
+        await auditService.log(actorId, 'ASSET_UPDATE', 'Asset', updated.id, normalizedData, ipAddress, tx);
         return updated;
       });
     }

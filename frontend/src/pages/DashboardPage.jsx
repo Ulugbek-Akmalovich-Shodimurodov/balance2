@@ -28,6 +28,7 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '../api/client.js';
+import AssetInventoryLink from '../components/AssetInventoryLink.jsx';
 
 echarts.use([EChartsPieChart, GraphicComponent, TooltipComponent, SVGRenderer]);
 
@@ -162,9 +163,9 @@ export default function DashboardPage() {
       tone: 'blue',
     },
     {
-      title: 'Faol aktivlar',
-      value: stats.active || 0,
-      subtitle: `${stats.activeRate || 0}% foydalanishga tayyor`,
+      title: 'Zaxira soz qurilmalar',
+      value: stats.warehouseReserve || 0,
+      subtitle: 'Omborxonada foydalanishga tayyor',
       icon: CheckCircleOutlined,
       tone: 'green',
     },
@@ -176,9 +177,9 @@ export default function DashboardPage() {
       tone: 'violet',
     },
     {
-      title: 'Ochiq texnik xizmat',
-      value: stats.openMaintenance || 0,
-      subtitle: `${stats.broken || 0} ta nosoz aktiv`,
+      title: 'Nosoz qurilmalar',
+      value: stats.broken || 0,
+      subtitle: 'Ta’mirlash talab etiladi',
       icon: ToolOutlined,
       tone: 'orange',
     },
@@ -194,7 +195,7 @@ export default function DashboardPage() {
         </button>
       ),
     },
-    { title: 'Inventar raqami', dataIndex: 'inventoryNumber' },
+    { title: 'Inventar raqami', render: (asset) => <AssetInventoryLink asset={asset} /> },
     { title: 'Bo‘lim', render: (asset) => asset.department?.name || 'Biriktirilmagan' },
     {
       title: 'Holat',

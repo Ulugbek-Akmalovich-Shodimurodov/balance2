@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { FileExcelOutlined, FilePdfOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Card, Select, Space, Typography, message } from 'antd';
+import { Button, Card, Checkbox, Divider, Select, Space, Typography, message } from 'antd';
 import { api, downloadFile } from '../api/client.js';
 
 const statusOptions = [
@@ -12,7 +12,7 @@ const statusOptions = [
 export default function ReportsPage() {
   const [departments, setDepartments] = useState([]);
   const [status, setStatus] = useState();
-  const [departmentId, setDepartmentId] = useState();
+  const [departmentIds, setDepartmentIds] = useState([]);
 
   useEffect(() => {
     api.get('/departments').then((response) => setDepartments(response.data));
@@ -20,9 +20,12 @@ export default function ReportsPage() {
 
   const query = new URLSearchParams();
   if (status) query.set('status', status);
-  if (departmentId) query.set('departmentId', departmentId);
+  if (departmentIds.length) query.set('departmentIds', departmentIds.join(','));
   const suffix = query.size ? `?${query.toString()}` : '';
-  const hasFilters = Boolean(status || departmentId);
+  const hasFilters = Boolean(status || departmentIds.length);
+  const allDepartmentsSelected = departments.length > 0 && departmentIds.length === departments.length;
+  const someDepartmentsSelected = departmentIds.length > 0 && !allDepartmentsSelected;
+  const departmentOptions = departments.map((department) => ({ value: department.id, label: department.name }));
 
   const download = async (extension) => {
     try {
@@ -50,19 +53,43 @@ export default function ReportsPage() {
               style={{ width: 230 }}
             />
             <Select
-              allowClear
+              mode="multiple"
               showSearch
               optionFilterProp="label"
-              value={departmentId}
-              onChange={setDepartmentId}
+              value={departmentIds}
+              onChange={setDepartmentIds}
               placeholder="Barcha bo‘limlar"
-              options={departments.map((department) => ({ value: department.id, label: department.name }))}
-              style={{ width: 230 }}
+              maxTagCount="responsive"
+              options={departmentOptions}
+              optionRender={(option) => (
+                <Space>
+                  <Checkbox checked={departmentIds.includes(option.value)} style={{ pointerEvents: 'none' }} />
+                  {option.label}
+                </Space>
+              )}
+              dropdownRender={(menu) => (
+                <>
+                  <div style={{ padding: '6px 12px' }}>
+                    <Checkbox
+                      checked={allDepartmentsSelected}
+                      indeterminate={someDepartmentsSelected}
+                      onChange={(event) => setDepartmentIds(
+                        event.target.checked ? departments.map((department) => department.id) : []
+                      )}
+                    >
+                      Barchasini tanlash
+                    </Checkbox>
+                  </div>
+                  <Divider style={{ margin: '4px 0' }} />
+                  {menu}
+                </>
+              )}
+              style={{ width: 360, maxWidth: '100%' }}
             />
             <Button
               icon={<ReloadOutlined />}
               disabled={!hasFilters}
-              onClick={() => { setStatus(undefined); setDepartmentId(undefined); }}
+              onClick={() => { setStatus(undefined); setDepartmentIds([]); }}
             >
               Filtrlarni tozalash
             </Button>

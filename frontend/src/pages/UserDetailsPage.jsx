@@ -9,6 +9,7 @@ import {
   LockOutlined,
   PhoneOutlined,
   PlusOutlined,
+  RollbackOutlined,
   SaveOutlined,
   UploadOutlined,
   UserOutlined,
@@ -36,13 +37,18 @@ import {
 import { useParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { api, downloadFile } from '../api/client.js';
+import AssetInventoryLink from '../components/AssetInventoryLink.jsx';
 import OnlyOfficeEditor from '../components/OnlyOfficeEditor.jsx';
 import SafeImage from '../components/SafeImage.jsx';
+import UserNameLink from '../components/UserNameLink.jsx';
 import { updateCurrentUser } from '../store/store.js';
 
 const actStatus = {
   DRAFT: { label: 'Qoralama', color: 'default' },
+  AWAITING_ENGINEER: { label: 'Muhandis tasdig‘i kutilmoqda', color: 'cyan' },
   PENDING: { label: 'Imzolash kutilmoqda', color: 'gold' },
+  AWAITING_ACCEPTANCE: { label: 'Admin qabuli kutilmoqda', color: 'orange' },
+  REVISION_REQUESTED: { label: 'Tuzatish talab qilindi', color: 'red' },
   SIGNED: { label: 'Imzolangan', color: 'green' },
   CANCELLED: { label: 'Bekor qilingan', color: 'red' },
 };
@@ -51,13 +57,15 @@ export default function UserDetailsPage() {
   const { id } = useParams();
   const dispatch = useDispatch();
   const currentUser = useSelector((state) => state.auth.user);
-  const isAdmin = currentUser?.role === 'ADMIN';
+  const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(currentUser?.role);
   const isOwnProfile = currentUser?.id === Number(id);
   const [user, setUser] = useState();
   const [acts, setActs] = useState([]);
   const [warehouseAssets, setWarehouseAssets] = useState([]);
+  const [engineers, setEngineers] = useState([]);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assigning, setAssigning] = useState(false);
+  const [returningAll, setReturningAll] = useState(false);
   const [selectedAct, setSelectedAct] = useState();
   const [actBusy, setActBusy] = useState(false);
   const [editorData, setEditorData] = useState();
@@ -69,6 +77,7 @@ export default function UserDetailsPage() {
   const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
   const [assignForm] = Form.useForm();
   const [signForm] = Form.useForm();
+  const [acceptForm] = Form.useForm();
   const [profileForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
 
@@ -90,6 +99,8 @@ export default function UserDetailsPage() {
     profileForm.setFieldsValue({
       fullName: user.fullName,
       phone: user.phone,
+      servicePhone: user.servicePhone,
+      extensionNumber: user.extensionNumber,
       passportSeries: user.passportSeries,
       pinfl: user.pinfl,
       imageUrl: user.imageUrl,
@@ -102,6 +113,8 @@ export default function UserDetailsPage() {
       const payload = {
         fullName: values.fullName.trim(),
         phone: values.phone?.trim() || null,
+        servicePhone: values.servicePhone?.trim() || null,
+        extensionNumber: values.extensionNumber?.trim() || null,
         passportSeries: values.passportSeries?.replace(/[\s-]/g, '').toUpperCase() || null,
         pinfl: values.pinfl?.replace(/\s/g, '') || null,
         imageUrl: values.imageUrl || null,
@@ -152,19 +165,24 @@ export default function UserDetailsPage() {
 
   const openAssign = async () => {
     try {
-      const { data } = await api.get('/maintenance/warehouse-assets');
-      setWarehouseAssets(data.filter((asset) => asset.status === 'ACTIVE' && !asset.assignedUserId));
+      const [assetsResponse, engineersResponse] = await Promise.all([
+        api.get('/maintenance/warehouse-assets'),
+        api.get('/delivery-acts/engineers/available', { params: { organizationId: user.department?.organizationId } }),
+      ]);
+      setWarehouseAssets(assetsResponse.data.filter((asset) => asset.status === 'ACTIVE' && !asset.assignedUserId));
+      setEngineers(engineersResponse.data);
       setAssignOpen(true);
     } catch (error) {
       message.error(error.response?.data?.message || 'Omborxonadagi qurilmalarni yuklab bo‘lmadi');
     }
   };
 
-  const assignAsset = async ({ assetIds }) => {
+  const assignAsset = async ({ assetIds, engineerId }) => {
     setAssigning(true);
     try {
       await api.post('/transactions/assign-batch', {
         assetIds,
+        engineerId,
         userId: Number(id),
         note: 'Xodim kartasi orqali biriktirildi',
       });
@@ -179,30 +197,71 @@ export default function UserDetailsPage() {
     }
   };
 
+  const returnAllAssets = () => {
+    Modal.confirm({
+      title: 'Barcha qurilmalarni topshirish',
+      content: `${user.assets?.length || 0} ta qurilma uchun yagona qaytarish dalolatnomasi yaratiladi. Qurilmalar faqat dalolatnoma imzolangach omborxonaga o‘tkaziladi.`,
+      okText: 'Dalolatnoma yaratish',
+      cancelText: 'Bekor qilish',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setReturningAll(true);
+        try {
+          const { data } = await api.post('/delivery-acts/returns', { recipientId: Number(id) });
+          message.success('Barcha qurilmalar uchun qaytarish dalolatnomasi yaratildi');
+          await load();
+          setEditorInstanceId(`return-act-editor-${data.id}-${Date.now()}`);
+          setSelectedAct(data);
+        } catch (error) {
+          message.error(error.response?.data?.message || 'Qaytarish dalolatnomasini yaratib bo‘lmadi');
+          throw error;
+        } finally {
+          setReturningAll(false);
+        }
+      },
+    });
+  };
+
   const openAct = async (act) => {
     try {
       setEditorInstanceId(`delivery-act-editor-${act.id}-${Date.now()}`);
       setSelectedAct(act);
+      if (act.status === 'AWAITING_ACCEPTANCE' && act.snapshot?.type === 'RETURN') {
+        acceptForm.setFieldsValue({
+          password: '',
+          reviews: (act.snapshot.assets || []).map((asset) => ({
+            assetId: asset.id,
+            condition: asset.condition === 'Shikastlangan' ? 'DAMAGED' : 'GOOD',
+            damageNote: asset.damageNote || '',
+          })),
+        });
+      }
     } catch (error) {
       message.error(error.response?.data?.message || 'Dalolatnomani ochib bo‘lmadi');
     }
   };
 
-  const sendAct = async () => {
-    setActBusy(true);
-    try {
-      await api.post(`/delivery-acts/${selectedAct.id}/send`, {
-        documentKey: editorData?.config?.document?.key,
-      });
-      message.success('Dalolatnoma xodimga imzolash uchun yuborildi');
-      setSelectedAct(undefined);
-      await load();
-    } catch (error) {
-      if (error?.errorFields) return;
-      message.error(error.response?.data?.message || 'Dalolatnomani yuborib bo‘lmadi');
-    } finally {
-      setActBusy(false);
-    }
+  const sendAct = () => {
+    let password = '';
+    Modal.confirm({
+      title: 'Topshiruvchi sifatida elektron imzolash',
+      content: <Space direction="vertical" style={{ width: '100%' }}><Typography.Text>Parolingiz tasdiqlangach dalolatnomaga QR-imzo joylanadi.</Typography.Text><Input.Password autoComplete="current-password" placeholder="Joriy parolingiz" onChange={(event) => { password = event.target.value; }} /></Space>,
+      okText: 'Imzolash va yuborish',
+      cancelText: 'Bekor qilish',
+      onOk: async () => {
+        if (!password) { message.warning('Parolingizni kiriting'); return Promise.reject(); }
+        setActBusy(true);
+        try {
+          await api.post(`/delivery-acts/${selectedAct.id}/send`, { documentKey: editorData?.config?.document?.key, password });
+          message.success('Topshiruvchi QR-imzosi qo‘yildi va keyingi bosqichga yuborildi');
+          setSelectedAct(undefined);
+          await load();
+        } catch (error) {
+          message.error(error.response?.data?.message || 'Dalolatnomani imzolab yuborib bo‘lmadi');
+          throw error;
+        } finally { setActBusy(false); }
+      },
+    });
   };
 
   const signAct = async (values) => {
@@ -215,6 +274,58 @@ export default function UserDetailsPage() {
       await load();
     } catch (error) {
       message.error(error.response?.data?.message || 'Dalolatnomani imzolashda xatolik');
+    } finally {
+      setActBusy(false);
+    }
+  };
+
+  const acceptReturnAct = async (values) => {
+    setActBusy(true);
+    try {
+      await api.post(`/delivery-acts/${selectedAct.id}/accept-return`, values);
+      message.success('Qurilmalar tekshirildi va omborxonaga qabul qilindi');
+      acceptForm.resetFields();
+      setSelectedAct(undefined);
+      await load();
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Qurilmalarni qabul qilib bo‘lmadi');
+    } finally {
+      setActBusy(false);
+    }
+  };
+
+  const requestRevision = () => {
+    let reason = '';
+    Modal.confirm({
+      title: 'Dalolatnomani tuzatishga qaytarish',
+      content: <Input.TextArea rows={4} placeholder="Aniqlangan xato yoki kamchilikni aniq yozing" onChange={(event) => { reason = event.target.value; }} />,
+      okText: 'Tuzatishga qaytarish',
+      cancelText: 'Bekor qilish',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        if (!reason.trim()) {
+          message.warning('Tuzatish sababini kiriting');
+          return Promise.reject();
+        }
+        await api.post(`/delivery-acts/${selectedAct.id}/request-revision`, { reason: reason.trim() });
+        message.success('Dalolatnoma tuzatishga qaytarildi');
+        setSelectedAct(undefined);
+        await load();
+      },
+    });
+  };
+
+  const resubmitAct = async () => {
+    setActBusy(true);
+    try {
+      await api.post(`/delivery-acts/${selectedAct.id}/resubmit`, {
+        documentKey: editorData?.config?.document?.key,
+      });
+      message.success('Tuzatilgan dalolatnoma qayta yuborildi');
+      setSelectedAct(undefined);
+      await load();
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Dalolatnomani qayta yuborib bo‘lmadi');
     } finally {
       setActBusy(false);
     }
@@ -236,6 +347,18 @@ export default function UserDetailsPage() {
       .finally(() => { if (active) setEditorLoading(false); });
     return () => { active = false; };
   }, [selectedAct?.id]);
+
+  useEffect(() => {
+    if (selectedAct?.status !== 'AWAITING_ACCEPTANCE' || selectedAct?.snapshot?.type !== 'RETURN') return;
+    acceptForm.setFieldsValue({
+      password: '',
+      reviews: (selectedAct.snapshot.assets || []).map((asset) => ({
+        assetId: asset.id,
+        condition: 'GOOD',
+        damageNote: '',
+      })),
+    });
+  }, [selectedAct?.id, selectedAct?.status, acceptForm]);
 
   if (!user) return null;
   const assets = user.assets || [];
@@ -293,8 +416,8 @@ export default function UserDetailsPage() {
     { title: 'Rasm', dataIndex: 'imageUrl', width: 72, render: (url) => <SafeImage src={url} width={42} height={42} /> },
     { title: 'Qurilma', dataIndex: 'name' },
     { title: 'Model', dataIndex: 'model' },
-    { title: 'Inventar raqami', dataIndex: 'inventoryNumber' },
-    { title: 'Seriya raqami', dataIndex: 'serialNumber' },
+    { title: 'Inventar raqami', render: (asset) => <AssetInventoryLink asset={asset} /> },
+    { title: 'Yili', dataIndex: 'manufactureYear', render: (year) => year || '—' },
     { title: 'Bo‘lim', render: (asset) => asset.department?.name || '—' },
   ];
 
@@ -310,7 +433,7 @@ export default function UserDetailsPage() {
         <Space wrap>
           {actAssets(act).map((asset) => (
             <Tag key={`${act.id}-${asset.id || asset.inventoryNumber}`}>
-              {asset.model || asset.name} · {asset.inventoryNumber}
+              {asset.model || asset.name} · <AssetInventoryLink asset={asset} />
             </Tag>
           ))}
         </Space>
@@ -325,23 +448,39 @@ export default function UserDetailsPage() {
     {
       title: 'Amal',
       dataIndex: 'type',
-      render: (type) => <Tag color={type === 'ASSIGN' ? 'blue' : 'green'}>{type === 'ASSIGN' ? 'TOPSHIRILDI' : 'QABUL QILINDI'}</Tag>,
+      render: (type) => (
+        <Tag color={type === 'ASSIGN' ? 'green' : 'blue'}>
+          {type === 'ASSIGN' ? 'QABUL QILDI' : 'TOPSHIRDI'}
+        </Tag>
+      ),
     },
     { title: 'Qurilma', render: (row) => row.asset?.name || '—' },
     { title: 'Model', render: (row) => row.asset?.model || '—' },
-    { title: 'Inventar raqami', render: (row) => row.asset?.inventoryNumber || '—' },
+    { title: 'Inventar raqami', render: (row) => <AssetInventoryLink asset={row.asset} /> },
     {
       title: 'Bo‘lim yo‘nalishi',
       render: (row) => <span>{row.fromDepartment?.name || '—'} <span className="history-arrow">→</span> {row.toDepartment?.name || '—'}</span>,
     },
     {
       title: 'Xodim yo‘nalishi',
-      render: (row) => <span>{row.fromUser?.fullName || 'Biriktirilmagan'} <span className="history-arrow">→</span> {row.user?.fullName || 'Biriktirilmagan'}</span>,
+      render: (row) => <span><UserNameLink user={row.fromUser} fallback="Biriktirilmagan" /> <span className="history-arrow">→</span> <UserNameLink user={row.user} fallback="Biriktirilmagan" /></span>,
     },
     { title: 'Sana', dataIndex: 'createdAt', render: (date) => new Date(date).toLocaleString('uz-UZ') },
   ];
 
   const canSign = selectedAct?.status === 'PENDING' && currentUser?.id === selectedAct?.recipientId;
+  const canAccept = isAdmin
+    && selectedAct?.status === 'AWAITING_ACCEPTANCE'
+    && selectedAct?.snapshot?.type === 'RETURN';
+  const canRequestRevision = (isAdmin
+    && selectedAct?.snapshot?.type === 'RETURN'
+    && selectedAct?.status === 'AWAITING_ACCEPTANCE')
+    || (selectedAct?.snapshot?.type !== 'RETURN'
+      && selectedAct?.status === 'PENDING'
+      && selectedAct?.recipientId === currentUser?.id);
+  const canResubmit = selectedAct?.snapshot?.type === 'RETURN'
+    && selectedAct?.status === 'REVISION_REQUESTED'
+    && selectedAct?.recipientId === currentUser?.id;
 
   return (
     <div className="user-detail">
@@ -351,8 +490,10 @@ export default function UserDetailsPage() {
           <Typography.Text className="asset-kicker">FOYDALANUVCHI KARTASI</Typography.Text>
           <Typography.Title level={2}>{user.fullName}</Typography.Title>
           <div className="user-meta">
+            <span><UserOutlined /> Lavozimi: {user.departmentPosition?.position?.name || 'Kiritilmagan'}</span>
             <span><UserOutlined /> Login: {user.login || '—'}</span>
-            <span><PhoneOutlined /> {user.phone || 'Telefon kiritilmagan'}</span>
+            <span><PhoneOutlined /> Shaxsiy: {user.phone || 'Kiritilmagan'}</span>
+            <span><PhoneOutlined /> Xizmat: {user.servicePhone ? `${user.servicePhone}${user.extensionNumber ? ` (${user.extensionNumber})` : ''}` : 'Kiritilmagan'}</span>
             <Tag color="blue">{user.role}</Tag>
           </div>
         </div>
@@ -395,8 +536,18 @@ export default function UserDetailsPage() {
                     </Form.Item>
                   </Col>
                   <Col xs={24} md={12}>
-                    <Form.Item name="phone" label="Telefon raqami">
+                    <Form.Item name="phone" label="Shaxsiy telefon raqami">
                       <Input prefix={<PhoneOutlined />} placeholder="+998 90 123 45 67" maxLength={40} />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item name="servicePhone" label="Xizmat telefoni">
+                      <Input prefix={<PhoneOutlined />} placeholder="+998 71 123 45 67" maxLength={40} />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item name="extensionNumber" label="Ichki raqam" rules={[{ pattern: /^\d{1,12}$/, message: 'Faqat raqam kiriting' }]}>
+                      <Input placeholder="Masalan: 01401" maxLength={12} inputMode="numeric" />
                     </Form.Item>
                   </Col>
                   <Col xs={24} md={12}>
@@ -494,6 +645,11 @@ export default function UserDetailsPage() {
         className="user-section"
         extra={(
           <Space>
+            {assets.length > 0 && (isOwnProfile || isAdmin) && (
+              <Button danger icon={<RollbackOutlined />} loading={returningAll} onClick={returnAllAssets}>
+                Barchasini topshirish
+              </Button>
+            )}
             {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={openAssign}>Yangi qurilma</Button>}
             <Tag icon={<LaptopOutlined />}>{assets.length} ta qurilma</Tag>
           </Space>
@@ -534,6 +690,15 @@ export default function UserDetailsPage() {
               }))}
             />
           </Form.Item>
+          <Form.Item name="engineerId" label="Yetkazib o‘rnatuvchi muhandis" rules={[{ required: true, message: 'TB va XK muhandisini tanlang' }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder="TB va XK muhandisini tanlang"
+              options={engineers.map((engineer) => ({ value: engineer.id, label: `${engineer.fullName} — ${engineer.department?.name || ''}` }))}
+              notFoundContent="TB va XK muhandisi tayinlanmagan"
+            />
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -560,8 +725,33 @@ export default function UserDetailsPage() {
             ? [
               <Button key="cancel" onClick={() => setSelectedAct(undefined)}>Bekor qilish</Button>,
               <Button key="doc" icon={<FileWordOutlined />} onClick={() => getDoc(selectedAct)}>DOC yuklab olish</Button>,
+              ...(canRequestRevision ? [<Button key="revision" danger onClick={requestRevision}>Tuzatishga qaytarish</Button>] : []),
               <Button key="sign" type="primary" loading={actBusy} onClick={() => signForm.submit()}>Imzolash</Button>,
             ]
+            : canAccept
+              ? [
+                <Button key="cancel" onClick={() => setSelectedAct(undefined)}>Bekor qilish</Button>,
+                <Button key="doc" icon={<FileWordOutlined />} onClick={() => getDoc(selectedAct)}>DOC yuklab olish</Button>,
+                <Button key="revision" danger onClick={requestRevision}>Tuzatishga qaytarish</Button>,
+                <Button
+                  key="accept"
+                  type="primary"
+                  loading={actBusy}
+                  onClick={() => acceptForm.validateFields()
+                    .then(acceptReturnAct)
+                    .catch(() => message.warning('Barcha qurilmalar holati va admin parolini kiriting'))}
+                >
+                  Qabul qilish va imzolash
+                </Button>,
+              ]
+              : canResubmit
+                ? [
+                  <Button key="cancel" onClick={() => setSelectedAct(undefined)}>Bekor qilish</Button>,
+                  <Button key="doc" icon={<FileWordOutlined />} onClick={() => getDoc(selectedAct)}>DOC yuklab olish</Button>,
+                  <Button key="resubmit" type="primary" loading={actBusy} disabled={!editorData} onClick={resubmitAct}>
+                    Tuzatib qayta yuborish
+                  </Button>,
+                ]
             : [
               <Button key="doc" icon={<FileWordOutlined />} onClick={() => getDoc(selectedAct)}>DOC yuklab olish</Button>,
               <Button key="pdf" icon={<FilePdfOutlined />} onClick={() => getPdf(selectedAct)}>PDF yuklab olish</Button>,
@@ -571,6 +761,11 @@ export default function UserDetailsPage() {
         {selectedAct && (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <Tag color={actStatus[selectedAct.status].color}>{actStatus[selectedAct.status].label}</Tag>
+            {selectedAct.snapshot?.revisions?.length > 0 && (
+              <Card size="small" title="Tuzatish sababi">
+                {selectedAct.snapshot.revisions.at(-1).reason}
+              </Card>
+            )}
             <div className="act-editor-shell">
               {editorLoading && <div className="onlyoffice-loading">ONLYOFFICE muharriri yuklanmoqda...</div>}
               {editorData && (
@@ -596,6 +791,41 @@ export default function UserDetailsPage() {
                   <Checkbox>Qurilmani va dalolatnomadagi ma’lumotlarni qabul qilaman</Checkbox>
                 </Form.Item>
                 <Form.Item name="password" label="Joriy parolingiz" rules={[{ required: true, message: 'Parolingizni kiriting' }]}>
+                  <Input.Password autoComplete="current-password" />
+                </Form.Item>
+              </Form>
+            )}
+            {canAccept && (
+              <Form form={acceptForm} layout="vertical" onFinish={acceptReturnAct}>
+                <Typography.Title level={5}>Qurilmalarni qabul qilishdan oldin tekshirish</Typography.Title>
+                {(selectedAct.snapshot?.assets || []).map((asset, index) => (
+                  <Card key={asset.id} size="small" style={{ marginBottom: 12 }}>
+                    <Typography.Text strong>{asset.name} — {asset.inventoryNumber}</Typography.Text>
+                    <Form.Item name={['reviews', index, 'assetId']} hidden><Input /></Form.Item>
+                    <Form.Item
+                      name={['reviews', index, 'condition']}
+                      label="Qurilma holati"
+                      rules={[{ required: true, message: 'Holatni belgilang' }]}
+                    >
+                      <Select options={[
+                        { value: 'GOOD', label: 'Soz, shikastsiz' },
+                        { value: 'DAMAGED', label: 'Shikastlangan / nosoz' },
+                      ]} />
+                    </Form.Item>
+                    <Form.Item noStyle shouldUpdate={(previous, current) => previous.reviews?.[index]?.condition !== current.reviews?.[index]?.condition}>
+                      {({ getFieldValue }) => getFieldValue(['reviews', index, 'condition']) === 'DAMAGED' && (
+                        <Form.Item
+                          name={['reviews', index, 'damageNote']}
+                          label="Shikast yoki nosozlik tavsifi"
+                          rules={[{ required: true, message: 'Shikastni batafsil yozing' }]}
+                        >
+                          <Input.TextArea rows={2} placeholder="Aniqlangan shikast, yetishmayotgan qism yoki nosozlik" />
+                        </Form.Item>
+                      )}
+                    </Form.Item>
+                  </Card>
+                ))}
+                <Form.Item name="password" label="Admin paroli" rules={[{ required: true, message: 'Parolingizni kiriting' }]}>
                   <Input.Password autoComplete="current-password" />
                 </Form.Item>
               </Form>

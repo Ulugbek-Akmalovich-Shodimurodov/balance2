@@ -1,10 +1,10 @@
 import { prisma } from '../../config/db.js';
 
-const publicUser = { id:true, fullName:true, login:true, phone:true, passportSeries:true, pinfl:true, imageUrl:true, role:true, department:true, createdAt:true };
+const publicUser = { id:true, fullName:true, login:true, phone:true, servicePhone:true, extensionNumber:true, passportSeries:true, pinfl:true, imageUrl:true, role:true, managedOrganization:true, managedOrganizationId:true, departmentPosition:{include:{position:true}}, department:true, createdAt:true };
 
 export const userRepository = {
   findByLogin: (identifier) => prisma.user.findFirst({ where: { OR: [{ login: identifier }, { email: identifier }] } }),
-  list: () => prisma.user.findMany({ select: publicUser, orderBy: { fullName: 'asc' } }),
+  list: (where = {}) => prisma.user.findMany({ where, select: publicUser, orderBy: { fullName: 'asc' } }),
   get: async (id) => {
     const userId = Number(id);
     const [user, history] = await Promise.all([

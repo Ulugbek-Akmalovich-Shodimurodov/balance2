@@ -4,7 +4,9 @@ import { Button, Card, Empty, Form, Input, Modal, Select, Space, Table, Tag, Typ
 import { Link, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { api } from '../api/client.js';
+import AssetInventoryLink from '../components/AssetInventoryLink.jsx';
 import SafeImage from '../components/SafeImage.jsx';
+import UserNameLink from '../components/UserNameLink.jsx';
 
 const statusInfo = {
   ACTIVE: { label: 'Faol', icon: CheckCircleFilled, className: 'asset-status-active' },
@@ -21,7 +23,7 @@ const AssetStatus = ({ status }) => {
 export default function DepartmentDetailsPage() {
   const { id } = useParams();
   const user = useSelector((state) => state.auth.user);
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
   const [department, setDepartment] = useState();
   const [editingAsset, setEditingAsset] = useState(null);
   const [search, setSearch] = useState('');
@@ -40,7 +42,7 @@ export default function DepartmentDetailsPage() {
       asset.name,
       asset.model,
       asset.inventoryNumber,
-      asset.serialNumber,
+      asset.manufactureYear,
       asset.assignedUser?.fullName,
     ].some((value) => value?.toLocaleLowerCase('uz').includes(needle));
     const matchesStatus = !statusFilter || asset.status === statusFilter;
@@ -79,9 +81,9 @@ export default function DepartmentDetailsPage() {
   const assetColumns = [
     { title: 'Rasm', dataIndex: 'imageUrl', width: 72, render: (url) => <SafeImage src={url} width={42} height={42} /> },
     { title: 'Qurilma', dataIndex: 'name', render: (name, asset) => <Link to={`/assets/${asset.id}`}>{name}</Link> },
-    { title: 'Model', dataIndex: 'model' }, { title: 'Inventar raqami', dataIndex: 'inventoryNumber' }, { title: 'Seria raqami', dataIndex: 'serialNumber' },
+    { title: 'Model', dataIndex: 'model' }, { title: 'Inventar raqami', render: (asset) => <AssetInventoryLink asset={asset} /> }, { title: 'Yili', dataIndex: 'manufactureYear', render: (year) => year || '—' },
     { title: 'Holat', dataIndex: 'status', width: 160, render: (status) => <AssetStatus status={status} /> },
-    { title: 'Foydalanuvchi', render: (asset) => asset.assignedUser?.fullName || 'Biriktirilmagan' },
+    { title: 'Foydalanuvchi', render: (asset) => <UserNameLink user={asset.assignedUser} fallback="Biriktirilmagan" /> },
     ...(isAdmin ? [{ title: 'Amal', width: 95, render: (asset) => <Button type="text" icon={<EditOutlined />} onClick={() => { setEditingAsset(asset); form.setFieldsValue({ status: asset.status }); }}>Holat</Button> }] : [])
   ];
   return <div className="department-detail">
@@ -94,7 +96,7 @@ export default function DepartmentDetailsPage() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             prefix={<SearchOutlined />}
-            placeholder="Qurilma, model, inventar, seria yoki foydalanuvchi bo‘yicha qidirish"
+            placeholder="Qurilma, model, inventar, yil yoki foydalanuvchi bo‘yicha qidirish"
             style={{ width: 390, maxWidth: '100%' }}
           />
           <Select

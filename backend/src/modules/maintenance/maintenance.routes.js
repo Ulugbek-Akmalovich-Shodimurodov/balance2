@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../../config/db.js';
-import { authenticate, authorize } from '../../middlewares/auth.js';
+import { authenticate, authorize, isOrganizationAdmin, isSuperAdmin } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { auditService } from '../audit/audit.service.js';
 
@@ -8,7 +8,11 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/', asyncHandler(async (req, res) => {
-  const where = req.user.role === 'ADMIN' ? {} : { asset: { assignedUserId: req.user.id } };
+  const where = isSuperAdmin(req.user)
+    ? {}
+    : isOrganizationAdmin(req.user)
+      ? { asset: { department: { organizationId: Number(req.user.managedOrganizationId) } } }
+      : { asset: { assignedUserId: req.user.id } };
   const logs = await prisma.maintenanceLog.findMany({
     where,
     include: {
@@ -24,11 +28,30 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json(logs);
 }));
 
+router.get('/reportable-assets', asyncHandler(async (req, res) => {
+  const assets = await prisma.asset.findMany({
+    where: {
+      assignedUserId: req.user.id,
+      status: { not: 'DISPOSED' }
+    },
+    select: {
+      id: true,
+      name: true,
+      model: true,
+      inventoryNumber: true,
+      manufactureYear: true,
+      status: true
+    },
+    orderBy: [{ name: 'asc' }, { inventoryNumber: 'asc' }]
+  });
+  res.json(assets);
+}));
+
 router.post('/report', asyncHandler(async (req, res) => {
   const { assetId, title, description } = req.body;
   const asset = await prisma.asset.findUnique({ where: { id: Number(assetId) } });
 
-  if (!asset || (req.user.role !== 'ADMIN' && asset.assignedUserId !== req.user.id)) {
+  if (!asset || (!isSuperAdmin(req.user) && asset.assignedUserId !== req.user.id)) {
     return res.status(403).json({ message: 'Faqat o‘zingizga biriktirilgan qurilma uchun so‘rov yuborishingiz mumkin' });
   }
 
@@ -49,9 +72,12 @@ router.post('/report', asyncHandler(async (req, res) => {
   res.status(201).json(log);
 }));
 
-router.get('/warehouse-assets', authorize('ADMIN'), asyncHandler(async (_, res) => {
+router.get('/warehouse-assets', authorize('ADMIN', 'ORGANIZATION_ADMIN'), asyncHandler(async (req, res) => {
   const warehouse = await prisma.department.findFirst({
-    where: { name: { equals: 'Omborxona', mode: 'insensitive' } }
+    where: {
+      name: { equals: 'Omborxona', mode: 'insensitive' },
+      ...(isOrganizationAdmin(req.user) ? { organizationId: Number(req.user.managedOrganizationId) } : {}),
+    }
   });
   if (!warehouse) return res.json([]);
 
@@ -62,7 +88,7 @@ router.get('/warehouse-assets', authorize('ADMIN'), asyncHandler(async (_, res) 
       name: true,
       model: true,
       inventoryNumber: true,
-      serialNumber: true,
+      manufactureYear: true,
       status: true,
       assignedUserId: true,
       assignedUser: { select: { fullName: true } }
@@ -72,13 +98,16 @@ router.get('/warehouse-assets', authorize('ADMIN'), asyncHandler(async (_, res) 
   res.json(assets);
 }));
 
-router.post('/:id/action', authorize('ADMIN'), asyncHandler(async (req, res) => {
+router.post('/:id/action', authorize('ADMIN', 'ORGANIZATION_ADMIN'), asyncHandler(async (req, res) => {
   const { status, resolutionNote, replacementAssetId } = req.body;
   const log = await prisma.maintenanceLog.findUnique({ where: { id: Number(req.params.id) } });
   if (!log) return res.status(404).json({ message: 'So‘rov topilmadi' });
 
-  const broken = await prisma.asset.findUnique({ where: { id: log.assetId } });
+  const broken = await prisma.asset.findUnique({ where: { id: log.assetId }, include: { department: true } });
   if (!broken) return res.status(404).json({ message: 'Qurilma topilmadi' });
+  if (isOrganizationAdmin(req.user) && broken.department?.organizationId !== req.user.managedOrganizationId) {
+    return res.status(403).json({ message: 'Bu tashkilot qurilmasini boshqarish uchun ruxsat yo‘q' });
+  }
 
   // These values remain available even after the asset is temporarily placed in the warehouse.
   const lastAssignment = (!log.reportedUserId || !log.reportedDepartmentId)
@@ -94,8 +123,11 @@ router.post('/:id/action', authorize('ADMIN'), asyncHandler(async (req, res) => 
     if (!replacementAssetId) {
       return res.status(400).json({ message: 'Omborxonadan almashtiruvchi qurilmani tanlang' });
     }
-    const replacement = await prisma.asset.findUnique({ where: { id: Number(replacementAssetId) } });
+    const replacement = await prisma.asset.findUnique({ where: { id: Number(replacementAssetId) }, include: { department: true } });
     if (!replacement) return res.status(404).json({ message: 'Tanlangan qurilma topilmadi' });
+    if (isOrganizationAdmin(req.user) && replacement.department?.organizationId !== req.user.managedOrganizationId) {
+      return res.status(403).json({ message: 'Almashtiruvchi qurilma boshqa tashkilotga tegishli' });
+    }
 
     await prisma.$transaction(async (tx) => {
       const brokenData = { status: 'DISPOSED', assignedUserId: null };
@@ -147,7 +179,10 @@ router.post('/:id/action', authorize('ADMIN'), asyncHandler(async (req, res) => 
 
   if (status === 'WAREHOUSED') {
     const warehouse = await prisma.department.findFirst({
-      where: { name: { equals: 'Omborxona', mode: 'insensitive' } }
+      where: {
+        name: { equals: 'Omborxona', mode: 'insensitive' },
+        ...(isOrganizationAdmin(req.user) ? { organizationId: Number(req.user.managedOrganizationId) } : {}),
+      }
     });
     if (!warehouse) return res.status(400).json({ message: 'Omborxona bo‘limi topilmadi' });
     assetData = { status: 'BROKEN', assignedUserId: null, departmentId: warehouse.id };
@@ -173,15 +208,15 @@ router.post('/:id/action', authorize('ADMIN'), asyncHandler(async (req, res) => 
   res.json(updated);
 }));
 
-router.post('/', authorize('ADMIN', 'MANAGER', 'TECHNICIAN'), asyncHandler(async (req, res) => {
+router.post('/', authorize('ADMIN', 'ORGANIZATION_ADMIN', 'MANAGER', 'TECHNICIAN'), asyncHandler(async (req, res) => {
   res.status(201).json(await prisma.maintenanceLog.create({ data: req.body }));
 }));
 
-router.put('/:id', authorize('ADMIN', 'MANAGER', 'TECHNICIAN'), asyncHandler(async (req, res) => {
+router.put('/:id', authorize('ADMIN', 'ORGANIZATION_ADMIN', 'MANAGER', 'TECHNICIAN'), asyncHandler(async (req, res) => {
   res.json(await prisma.maintenanceLog.update({ where: { id: Number(req.params.id) }, data: req.body }));
 }));
 
-router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req, res) => {
+router.delete('/:id', authorize('ADMIN', 'ORGANIZATION_ADMIN'), asyncHandler(async (req, res) => {
   await prisma.maintenanceLog.delete({ where: { id: Number(req.params.id) } });
   res.status(204).end();
 }));

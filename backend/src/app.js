@@ -10,7 +10,7 @@ import routes from './routes/index.js';
 const app = express();
 app.set('trust proxy', 1);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-const allowedOrigins = new Set([env.clientUrl, 'http://localhost:5173', 'http://localhost:3000']);
+const allowedOrigins = new Set([env.clientUrl, ...env.additionalClientUrls, 'http://localhost:5173', 'http://localhost:3000']);
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.has(origin)) return callback(null, true);

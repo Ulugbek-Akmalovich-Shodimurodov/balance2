@@ -4,14 +4,17 @@ import { Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import { api, downloadFile } from '../api/client.js';
+import AssetInventoryLink from '../components/AssetInventoryLink.jsx';
 import SafeImage from '../components/SafeImage.jsx';
+import UserNameLink from '../components/UserNameLink.jsx';
 
 const labels = { NEW: 'Yangi so‘rov', IN_PROGRESS: 'Jarayonda', REPAIRED: 'Tuzatildi', REPLACED: 'Almashtirildi', WAREHOUSED: 'Omborxonada' };
 const colors = { NEW: 'red', IN_PROGRESS: 'orange', REPAIRED: 'green', REPLACED: 'blue', WAREHOUSED: 'purple' };
 
 export default function MaintenancePage() {
   const user = useSelector((state) => state.auth.user);
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = ['SUPER_ADMIN', 'ADMIN', 'ORGANIZATION_ADMIN'].includes(user?.role);
+  const canReportOwnIssue = !['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
   const [items, setItems] = useState([]);
   const [assets, setAssets] = useState([]);
   const [warehouse, setWarehouse] = useState([]);
@@ -28,10 +31,10 @@ export default function MaintenancePage() {
   const load = () => {
     api.get('/maintenance').then((response) => setItems(response.data));
     if (isAdmin) api.get('/maintenance/warehouse-assets').then((response) => setWarehouse(response.data));
-    else api.get('/assets', { params: { limit: 100 } }).then((response) => setAssets(response.data.items));
+    if (canReportOwnIssue) api.get('/maintenance/reportable-assets').then((response) => setAssets(response.data));
   };
 
-  useEffect(() => { load(); }, [isAdmin]);
+  useEffect(() => { load(); }, [isAdmin, canReportOwnIssue]);
 
   const departmentOptions = [...new Map(items
     .filter((item) => item.asset?.department)
@@ -43,7 +46,7 @@ export default function MaintenancePage() {
       item.asset?.name,
       item.asset?.model,
       item.asset?.inventoryNumber,
-      item.asset?.serialNumber,
+      item.asset?.manufactureYear,
       item.asset?.assignedUser?.fullName,
       item.title,
     ].some((value) => value?.toLocaleLowerCase('uz').includes(needle));
@@ -97,10 +100,10 @@ export default function MaintenancePage() {
     { title: 'Rasm', width: 70, render: (row) => <SafeImage src={row.asset?.imageUrl} width={42} height={42} /> },
     { title: 'Qurilma', width: 150, render: (row) => row.asset ? <Link to={`/assets/${row.asset.id}`}>{row.asset.name}</Link> : '—' },
     { title: 'Model', width: 160, render: (row) => row.asset?.model || '—' },
-    { title: 'Inventar raqami', width: 145, render: (row) => row.asset?.inventoryNumber || '—' },
-    { title: 'Seria raqami', width: 135, render: (row) => row.asset?.serialNumber || '—' },
+    { title: 'Inventar raqami', width: 145, render: (row) => <AssetInventoryLink asset={row.asset} /> },
+    { title: 'Yili', width: 100, render: (row) => row.asset?.manufactureYear || '—' },
     { title: 'Bo‘lim', width: 130, render: (row) => row.asset?.department?.name || '—' },
-    { title: 'Foydalanuvchi', width: 155, render: (row) => row.asset?.assignedUser?.fullName || 'Biriktirilmagan' },
+    { title: 'Foydalanuvchi', width: 155, render: (row) => <UserNameLink user={row.asset?.assignedUser} fallback="Biriktirilmagan" /> },
     { title: 'Qurilma holati', width: 125, render: (row) => <Tag color={row.asset?.status === 'BROKEN' ? 'gold' : row.asset?.status === 'DISPOSED' ? 'red' : 'green'}>{row.asset?.status === 'BROKEN' ? 'Nosoz' : row.asset?.status === 'DISPOSED' ? 'Chiqarilgan' : 'Faol'}</Tag> },
     { title: 'Muammo', dataIndex: 'title' },
     { title: 'Holat', render: (row) => <Tag color={colors[row.status || 'NEW']}>{labels[row.status || 'NEW']}</Tag> },
@@ -123,11 +126,8 @@ export default function MaintenancePage() {
 
   return <>
     <Space className="page-head">
-      <div>
-        <Typography.Title level={2}>Texnik xizmat</Typography.Title>
-        <Typography.Text type="secondary">{isAdmin ? 'Nosozlikdan yechimgacha jarayon' : 'Qurilmangizdagi nosozlik haqida xabar bering'}</Typography.Text>
-      </div>
-      {!isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => setReportOpen(true)}>Nosozlik haqida xabar berish</Button>}
+      <Typography.Title level={2}>Texnik xizmat</Typography.Title>
+      {canReportOwnIssue && <Button type="primary" icon={<PlusOutlined />} onClick={() => setReportOpen(true)}>Nosozlik haqida xabar berish</Button>}
     </Space>
     <Card>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>

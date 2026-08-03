@@ -11,7 +11,7 @@ export const authService = {
     const identifier = login.trim().toLowerCase();
     const user = await userRepository.findByLogin(identifier);
     if (!user || !(await bcrypt.compare(password, user.password))) throw new ApiError(401, 'Login yoki parol noto‘g‘ri');
-    const payload = { id: user.id, login: user.login, email: user.email, fullName: user.fullName, role: user.role };
+    const payload = { id: user.id, login: user.login, email: user.email, fullName: user.fullName, role: user.role, managedOrganizationId: user.managedOrganizationId || null };
     return { token: jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresIn }), user: payload };
   },
 };
