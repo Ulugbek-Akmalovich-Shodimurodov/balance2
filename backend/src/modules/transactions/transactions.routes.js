@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import { prisma } from '../../config/db.js';
-import { authenticate, authorize } from '../../middlewares/auth.js';
+import { authenticate, authorize, isOrganizationAdmin } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { ApiError } from '../../utils/apiError.js';
 import { auditService } from '../audit/audit.service.js';
-import { createDeliveryAct } from '../deliveryActs/deliveryActs.service.js';
+import {
+  createCurrentInventoryDeliveryAct,
+  createDeliveryAct,
+} from '../deliveryActs/deliveryActs.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -16,29 +19,46 @@ router.post('/assign-batch', authorize('ADMIN', 'MANAGER'), asyncHandler(async (
       .filter(Number.isInteger),
   )];
   const userId = Number(req.body.userId);
+  const engineerId = Number(req.body.engineerId);
   const { note } = req.body;
 
   if (!assetIds.length) throw new ApiError(400, 'Kamida bitta qurilmani tanlang');
   if (assetIds.length > 50) throw new ApiError(400, 'Bir vaqtda 50 tadan ortiq qurilma biriktirib bo‘lmaydi');
-  if (assetIds.some((id) => id < 1) || !Number.isInteger(userId) || userId < 1) {
+  if (assetIds.some((id) => id < 1) || !Number.isInteger(userId) || userId < 1 || !Number.isInteger(engineerId) || engineerId < 1) {
     throw new ApiError(400, 'Qurilma yoki xodim ma’lumoti noto‘g‘ri');
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const [employee, creator, assets] = await Promise.all([
+    const [employee, creator, engineer, assets] = await Promise.all([
       tx.user.findUnique({
         where: { id: userId },
-        include: { department: true },
+        include: { department: true, departmentPosition: { include: { position: true } } },
       }),
-      tx.user.findUnique({ where: { id: req.user.id } }),
+      tx.user.findUnique({ where: { id: req.user.id }, include: { departmentPosition: { include: { position: true } } } }),
+      tx.user.findUnique({
+        where: { id: engineerId },
+        include: { department: true, departmentPosition: { include: { position: true } } },
+      }),
       tx.asset.findMany({
         where: { id: { in: assetIds } },
+        include: { department: true },
         orderBy: { id: 'asc' },
       }),
     ]);
 
     if (!employee) throw new ApiError(404, 'Xodim topilmadi');
+    if (!engineer || engineer.departmentPosition?.position?.name?.trim().toLocaleLowerCase('uz') !== 'tb va xk muhandisi') {
+      throw new ApiError(400, 'TB va XK muhandisini tanlang');
+    }
+    if (engineer.department?.organizationId !== employee.department?.organizationId) {
+      throw new ApiError(400, 'Muhandis va xodim bir tashkilotga tegishli bo‘lishi kerak');
+    }
     if (assets.length !== assetIds.length) throw new ApiError(404, 'Tanlangan qurilmalardan biri topilmadi');
+    if (isOrganizationAdmin(req.user)
+      && (employee.department?.organizationId !== req.user.managedOrganizationId
+        || assets.some((asset) => asset.department?.organizationId !== req.user.managedOrganizationId))) {
+      throw new ApiError(403, 'Faqat boshqaruvingizdagi tashkilot qurilmalarini biriktirishingiz mumkin');
+    }
 
     const unavailable = assets.filter((asset) => asset.assignedUserId);
     if (unavailable.length) {
@@ -84,6 +104,7 @@ router.post('/assign-batch', authorize('ADMIN', 'MANAGER'), asyncHandler(async (
       assets: assignedAssets,
       recipient: employee,
       creator,
+      engineer,
       department: employee.department,
     });
 
@@ -96,41 +117,72 @@ router.post('/assign-batch', authorize('ADMIN', 'MANAGER'), asyncHandler(async (
 router.post('/assign', authorize('ADMIN', 'MANAGER'), asyncHandler(async (req, res) => {
   const { assetId, userId, departmentId, note } = req.body;
   const created = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: Number(assetId) } });
+    const asset = await tx.asset.findUnique({ where: { id: Number(assetId) }, include: { department: true } });
     const targetDepartment = departmentId ? await tx.department.findUnique({ where: { id: Number(departmentId) } }) : null;
     if (!asset || (departmentId && !targetDepartment)) throw new Error('Qurilma yoki bo‘lim topilmadi');
 
     const isWarehouse = targetDepartment?.name?.trim().toLocaleLowerCase() === 'omborxona';
+    if (isOrganizationAdmin(req.user)
+      && (asset.department?.organizationId !== req.user.managedOrganizationId
+        || (targetDepartment && targetDepartment.organizationId !== req.user.managedOrganizationId))) {
+      throw new ApiError(403, 'Faqat boshqaruvingizdagi tashkilot qurilmasini o‘tkazishingiz mumkin');
+    }
     if (isWarehouse) {
+      const previousUserId = asset.assignedUserId;
       const assetData = { assignedUserId: null, departmentId: targetDepartment.id };
       await tx.asset.update({ where: { id: asset.id }, data: assetData });
       await auditService.log(req.user.id, 'ASSET_UPDATE', 'Asset', asset.id, { ...assetData, source: 'TRANSACTION_ASSIGN' }, req.ip, tx);
-      return tx.transaction.create({ data: { assetId: asset.id, fromUserId: asset.assignedUserId, actorId: req.user.id, fromDepartmentId: asset.departmentId, toDepartmentId: targetDepartment.id, type: 'RETURN', note: note || 'Omborxonaga qabul qilindi' } });
+      const transaction = await tx.transaction.create({ data: { assetId: asset.id, fromUserId: previousUserId, actorId: req.user.id, fromDepartmentId: asset.departmentId, toDepartmentId: targetDepartment.id, type: 'RETURN', note: note || 'Omborxonaga qabul qilindi' } });
+      if (previousUserId) {
+        await createCurrentInventoryDeliveryAct(tx, {
+          recipientId: previousUserId,
+          creatorId: req.user.id,
+        });
+      }
+      return transaction;
     }
 
-    const employee = userId ? await tx.user.findUnique({ where: { id: Number(userId) } }) : null;
+    const employee = userId ? await tx.user.findUnique({ where: { id: Number(userId) }, include: { department: true, departmentPosition: { include: { position: true } } } }) : null;
     if (!employee) throw new Error('Xodimni tanlang');
+    if (isOrganizationAdmin(req.user) && employee.department?.organizationId !== req.user.managedOrganizationId) {
+      throw new ApiError(403, 'Xodim boshqa tashkilotga tegishli');
+    }
     const targetDepartmentId = employee.departmentId || targetDepartment?.id || asset.departmentId;
     const assetData = { assignedUserId: employee.id, departmentId: targetDepartmentId };
     await tx.asset.update({ where: { id: asset.id }, data: assetData });
     await auditService.log(req.user.id, 'ASSET_UPDATE', 'Asset', asset.id, { ...assetData, source: 'TRANSACTION_ASSIGN' }, req.ip, tx);
     const transaction = await tx.transaction.create({ data: { assetId: asset.id, userId: employee.id, fromUserId: asset.assignedUserId, actorId: req.user.id, fromDepartmentId: asset.departmentId, toDepartmentId: targetDepartmentId, type: 'ASSIGN', note } });
-    const [creator, department, assignedAssets] = await Promise.all([
-      tx.user.findUnique({ where: { id: req.user.id } }),
+    const [creator, department, assignedAssets, engineer] = await Promise.all([
+      tx.user.findUnique({ where: { id: req.user.id }, include: { departmentPosition: { include: { position: true } } } }),
       targetDepartmentId ? tx.department.findUnique({ where: { id: targetDepartmentId } }) : null,
       tx.asset.findMany({
         where: { assignedUserId: employee.id },
         orderBy: { id: 'asc' },
       }),
+      tx.user.findFirst({
+        where: {
+          department: { organizationId: employee.department?.organizationId },
+          departmentPosition: { position: { name: { equals: 'TB va XK muhandisi', mode: 'insensitive' } } },
+        },
+        include: { department: true, departmentPosition: { include: { position: true } } },
+      }),
     ]);
+    if (!engineer) throw new ApiError(400, 'Tashkilotda TB va XK muhandisi tayinlanmagan');
     await createDeliveryAct(tx, {
       transactionId: transaction.id,
       asset,
       assets: assignedAssets,
       recipient: employee,
       creator,
+      engineer,
       department,
     });
+    if (asset.assignedUserId && asset.assignedUserId !== employee.id) {
+      await createCurrentInventoryDeliveryAct(tx, {
+        recipientId: asset.assignedUserId,
+        creatorId: req.user.id,
+      });
+    }
     return transaction;
   });
   res.status(201).json(created);
@@ -139,12 +191,22 @@ router.post('/assign', authorize('ADMIN', 'MANAGER'), asyncHandler(async (req, r
 router.post('/return', authorize('ADMIN', 'MANAGER', 'TECHNICIAN'), asyncHandler(async (req, res) => {
   const { assetId, note } = req.body;
   const created = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findUnique({ where: { id: Number(assetId) } });
+    const asset = await tx.asset.findUnique({ where: { id: Number(assetId) }, include: { department: true } });
     if (!asset) throw new Error('Qurilma topilmadi');
+    if (isOrganizationAdmin(req.user) && asset.department?.organizationId !== req.user.managedOrganizationId) {
+      throw new ApiError(403, 'Qurilma boshqa tashkilotga tegishli');
+    }
     const assetData = { assignedUserId: null };
     await tx.asset.update({ where: { id: Number(assetId) }, data: assetData });
     await auditService.log(req.user.id, 'ASSET_UPDATE', 'Asset', Number(assetId), { ...assetData, source: 'TRANSACTION_RETURN' }, req.ip, tx);
-    return tx.transaction.create({ data: { assetId: Number(assetId), fromUserId: asset.assignedUserId, actorId: req.user.id, fromDepartmentId: asset.departmentId, toDepartmentId: asset.departmentId, type: 'RETURN', note } });
+    const transaction = await tx.transaction.create({ data: { assetId: Number(assetId), fromUserId: asset.assignedUserId, actorId: req.user.id, fromDepartmentId: asset.departmentId, toDepartmentId: asset.departmentId, type: 'RETURN', note } });
+    if (asset.assignedUserId) {
+      await createCurrentInventoryDeliveryAct(tx, {
+        recipientId: asset.assignedUserId,
+        creatorId: req.user.id,
+      });
+    }
+    return transaction;
   });
   res.status(201).json(created);
 }));

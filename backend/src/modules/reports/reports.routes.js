@@ -2,7 +2,7 @@ import { Router } from 'express';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import { prisma } from '../../config/db.js';
-import { authenticate } from '../../middlewares/auth.js';
+import { authenticate, isOrganizationAdmin, isSuperAdmin } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 
 const router = Router();
@@ -20,13 +20,22 @@ const statusColors = {
   DISPOSED: { background: 'FDECEA', text: 'B42318' },
 };
 
-const reportWhere = (query) => ({
+const selectedDepartmentIds = (query) => String(query.departmentIds || query.departmentId || '')
+  .split(',')
+  .map((value) => Number(value))
+  .filter((value) => Number.isInteger(value) && value > 0);
+
+const reportWhere = (query, user) => ({
   ...(query.status ? { status: query.status } : {}),
-  ...(query.departmentId ? { departmentId: Number(query.departmentId) } : {}),
+  ...(isOrganizationAdmin(user) ? { department: { organizationId: Number(user.managedOrganizationId) } } : {}),
+  ...(!isSuperAdmin(user) && !isOrganizationAdmin(user) ? { assignedUserId: user.id } : {}),
+  ...(selectedDepartmentIds(query).length
+    ? { departmentId: { in: selectedDepartmentIds(query) } }
+    : {}),
 });
 
-const reportAssets = (query) => prisma.asset.findMany({
-  where: reportWhere(query),
+const reportAssets = (query, user) => prisma.asset.findMany({
+  where: reportWhere(query, user),
   include: {
     assetType: { select: { name: true } },
     department: { select: { name: true } },
@@ -35,15 +44,20 @@ const reportAssets = (query) => prisma.asset.findMany({
   orderBy: [{ name: 'asc' }, { inventoryNumber: 'asc' }],
 });
 
-const buildReport = async (query) => {
-  const [assets, department] = await Promise.all([
-    reportAssets(query),
-    query.departmentId
-      ? prisma.department.findUnique({
-        where: { id: Number(query.departmentId) },
+const buildReport = async (query, user) => {
+  const departmentIds = selectedDepartmentIds(query);
+  const [assets, departments] = await Promise.all([
+    reportAssets(query, user),
+    departmentIds.length
+      ? prisma.department.findMany({
+        where: {
+          id: { in: departmentIds },
+          ...(isOrganizationAdmin(user) ? { organizationId: Number(user.managedOrganizationId) } : {}),
+        },
         select: { name: true },
+        orderBy: { name: 'asc' },
       })
-      : null,
+      : [],
   ]);
   const summary = {
     total: assets.length,
@@ -53,7 +67,7 @@ const buildReport = async (query) => {
   };
   const filters = [
     `Holat: ${query.status ? statusLabels[query.status] || query.status : 'Barchasi'}`,
-    `Bo‘lim: ${department?.name || 'Barchasi'}`,
+    `Bo‘limlar: ${departments.length ? departments.map((department) => department.name).join(', ') : 'Barchasi'}`,
   ].join('  |  ');
   return { assets, summary, filters };
 };
@@ -111,7 +125,7 @@ const loadReportImages = async (assets) => {
 };
 
 router.get('/assets.xlsx', asyncHandler(async (req, res) => {
-  const { assets, summary, filters } = await buildReport(req.query);
+  const { assets, summary, filters } = await buildReport(req.query, req.user);
   const images = await loadReportImages(assets);
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Aktivlarni boshqarish tizimi';
@@ -139,7 +153,7 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
     { key: 'name', width: 25 },
     { key: 'model', width: 24 },
     { key: 'inventoryNumber', width: 24 },
-    { key: 'serialNumber', width: 22 },
+    { key: 'manufactureYear', width: 12 },
     { key: 'status', width: 24 },
     { key: 'department', width: 24 },
     { key: 'assignedUser', width: 29 },
@@ -191,7 +205,7 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
   worksheet.getRow(7).height = 24;
 
   const headerRow = worksheet.getRow(9);
-  headerRow.values = ['№', 'Rasm', 'Aktiv nomi', 'Model', 'Inventar raqami', 'Seria raqami', 'Holati', 'Bo‘lim', 'Foydalanuvchi'];
+  headerRow.values = ['№', 'Rasm', 'Aktiv nomi', 'Model', 'Inventar raqami', 'Yili', 'Holati', 'Bo‘lim', 'Foydalanuvchi'];
   headerRow.height = 30;
   headerRow.eachCell((cell) => {
     cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -212,7 +226,7 @@ router.get('/assets.xlsx', asyncHandler(async (req, res) => {
       name: asset.name,
       model: asset.model || '—',
       inventoryNumber: asset.inventoryNumber,
-      serialNumber: asset.serialNumber || '—',
+      manufactureYear: asset.manufactureYear || '—',
       status: statusLabels[asset.status] || asset.status,
       department: asset.department?.name || 'Biriktirilmagan',
       assignedUser: asset.assignedUser?.fullName || 'Biriktirilmagan',
@@ -291,7 +305,7 @@ const truncate = (value, length) => {
 };
 
 router.get('/assets.pdf', asyncHandler(async (req, res) => {
-  const { assets, summary, filters } = await buildReport(req.query);
+  const { assets, summary, filters } = await buildReport(req.query, req.user);
   const images = await loadReportImages(assets);
   const document = new PDFDocument({
     size: 'A4',
@@ -357,7 +371,7 @@ router.get('/assets.pdf', asyncHandler(async (req, res) => {
     { label: 'AKTIV NOMI', key: 'name', width: 90 },
     { label: 'MODEL', key: 'model', width: 82 },
     { label: 'INVENTAR RAQAMI', key: 'inventoryNumber', width: 100 },
-    { label: 'SERIA RAQAMI', key: 'serialNumber', width: 84 },
+    { label: 'YILI', key: 'manufactureYear', width: 48 },
     { label: 'HOLATI', key: 'status', width: 76, align: 'center' },
     { label: "BO'LIM", key: 'department', width: 95 },
     { label: 'FOYDALANUVCHI', key: 'assignedUser', width: contentWidth - 609 },
@@ -402,7 +416,7 @@ router.get('/assets.pdf', asyncHandler(async (req, res) => {
       name: truncate(asset.name, 24),
       model: truncate(asset.model, 20),
       inventoryNumber: truncate(asset.inventoryNumber, 24),
-      serialNumber: truncate(asset.serialNumber, 20),
+      manufactureYear: asset.manufactureYear || '—',
       status: statusLabels[asset.status] || asset.status,
       department: truncate(asset.department?.name || 'Biriktirilmagan', 22),
       assignedUser: truncate(asset.assignedUser?.fullName || 'Biriktirilmagan', 28),
@@ -484,14 +498,19 @@ const maintenanceColors = {
 
 const maintenanceReport = async (query, user) => {
   const search = String(query.search || '').trim();
+  const accessAssetFilter = isSuperAdmin(user)
+    ? {}
+    : isOrganizationAdmin(user)
+      ? { department: { organizationId: Number(user.managedOrganizationId) } }
+      : { assignedUserId: user.id };
   const where = {
-    ...(user.role === 'ADMIN' ? {} : { asset: { assignedUserId: user.id } }),
+    ...(!isSuperAdmin(user) ? { asset: accessAssetFilter } : {}),
     ...(query.status ? { status: query.status } : {}),
-    ...(query.departmentId ? { asset: { departmentId: Number(query.departmentId), ...(user.role === 'ADMIN' ? {} : { assignedUserId: user.id }) } } : {}),
+    ...(query.departmentId ? { asset: { departmentId: Number(query.departmentId), ...accessAssetFilter } } : {}),
     ...(query.assetStatus ? { asset: {
       status: query.assetStatus,
       ...(query.departmentId ? { departmentId: Number(query.departmentId) } : {}),
-      ...(user.role === 'ADMIN' ? {} : { assignedUserId: user.id }),
+      ...accessAssetFilter,
     } } : {}),
     ...(search ? {
       OR: [
@@ -500,7 +519,7 @@ const maintenanceReport = async (query, user) => {
         { asset: { name: { contains: search, mode: 'insensitive' } } },
         { asset: { model: { contains: search, mode: 'insensitive' } } },
         { asset: { inventoryNumber: { contains: search, mode: 'insensitive' } } },
-        { asset: { serialNumber: { contains: search, mode: 'insensitive' } } },
+        ...(/^\d{4}$/.test(search) ? [{ asset: { manufactureYear: Number(search) } }] : []),
         { asset: { assignedUser: { fullName: { contains: search, mode: 'insensitive' } } } },
       ],
     } : {}),

@@ -9,6 +9,8 @@ datasource db {
 
 enum Role {
   ADMIN
+  SUPER_ADMIN
+  ORGANIZATION_ADMIN
   MANAGER
   TECHNICIAN
   VIEWER
@@ -35,7 +37,10 @@ enum MaintenanceStatus {
 
 enum DeliveryActStatus {
   DRAFT
+  AWAITING_ENGINEER
   PENDING
+  AWAITING_ACCEPTANCE
+  REVISION_REQUESTED
   SIGNED
   CANCELLED
 }
@@ -43,14 +48,20 @@ enum DeliveryActStatus {
 model User {
   id        Int      @id @default(autoincrement())
   fullName  String
+  departmentPositionId Int?
+  departmentPosition DepartmentPosition? @relation(fields: [departmentPositionId], references: [id])
   email     String?  @unique
   login     String?  @unique
   password  String
   phone     String?
+  servicePhone String?
+  extensionNumber String?
   passportSeries String? @unique
   pinfl     String?  @unique
   imageUrl  String?
   role      Role     @default(VIEWER)
+  managedOrganizationId Int?
+  managedOrganization Organization? @relation("OrganizationAdministrators", fields: [managedOrganizationId], references: [id])
   departmentId Int?
   department Department? @relation(fields: [departmentId], references: [id])
   createdAt DateTime @default(now())
@@ -62,6 +73,42 @@ model User {
   auditLogs AuditLog[]
   receivedDeliveryActs DeliveryAct[] @relation("DeliveryActRecipient")
   createdDeliveryActs  DeliveryAct[] @relation("DeliveryActCreator")
+  acceptedDeliveryActs DeliveryAct[] @relation("DeliveryActAcceptor")
+  engineeredDeliveryActs DeliveryAct[] @relation("DeliveryActEngineer")
+}
+
+model Position {
+  id        Int      @id @default(autoincrement())
+  name      String
+  organizationId Int
+  organization Organization @relation(fields: [organizationId], references: [id])
+  departmentPositions DepartmentPosition[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, name])
+}
+
+model DepartmentPosition {
+  id           Int        @id @default(autoincrement())
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+  positionId   Int
+  position     Position   @relation(fields: [positionId], references: [id])
+  users        User[]
+  createdAt    DateTime   @default(now())
+
+  @@unique([departmentId, positionId])
+}
+
+model Organization {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  departments Department[]
+  positions   Position[]
+  administrators User[] @relation("OrganizationAdministrators")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 }
 
 model Department {
@@ -70,8 +117,11 @@ model Department {
   parentId  Int?
   parent    Department? @relation("DepartmentHierarchy", fields: [parentId], references: [id])
   children  Department[] @relation("DepartmentHierarchy")
+  organizationId Int
+  organization Organization @relation(fields: [organizationId], references: [id])
   assets    Asset[]
   users     User[]
+  departmentPositions DepartmentPosition[]
   outgoingTransactions Transaction[] @relation("FromDepartmentTransactions")
   incomingTransactions Transaction[] @relation("ToDepartmentTransactions")
   createdAt DateTime @default(now())
@@ -90,6 +140,7 @@ model Asset {
   model           String      @default("")
   inventoryNumber String      @unique
   serialNumber    String?
+  manufactureYear Int?
   imageUrl        String?
   status          AssetStatus @default(ACTIVE)
   purchaseDate    DateTime?
@@ -142,14 +193,21 @@ model DeliveryAct {
   snapshot      Json
   sentAt        DateTime?
   signedAt      DateTime?
+  acceptedAt    DateTime?
+  acceptedById  Int?
+  engineerId    Int?
+  engineerConfirmedAt DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   transaction   Transaction?      @relation(fields: [transactionId], references: [id])
   asset         Asset             @relation(fields: [assetId], references: [id])
   recipient     User              @relation("DeliveryActRecipient", fields: [recipientId], references: [id])
   createdBy     User              @relation("DeliveryActCreator", fields: [createdById], references: [id])
+  acceptedBy    User?             @relation("DeliveryActAcceptor", fields: [acceptedById], references: [id])
+  engineer      User?             @relation("DeliveryActEngineer", fields: [engineerId], references: [id])
 
   @@index([recipientId, assetId])
+  @@index([engineerId, status])
 }
 
 model MaintenanceLog {

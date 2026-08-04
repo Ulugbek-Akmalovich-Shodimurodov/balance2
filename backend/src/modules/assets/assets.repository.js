@@ -1,6 +1,6 @@
 import { prisma } from '../../config/db.js';
 export const assetRepository = {
-  async list({ search, status, departmentId, assetTypeId, assignedUserId, assignment, page = 1, limit = 10 }) {
+  async list({ search, status, departmentId, assetTypeId, assignedUserId, assignment, organizationId, page = 1, limit = 10 }) {
     const assignmentFilter = assignedUserId
       ? { assignedUserId: Number(assignedUserId) }
       : assignment === 'assigned'
@@ -8,7 +8,8 @@ export const assetRepository = {
         : assignment === 'unassigned'
           ? { assignedUserId: null }
           : {};
-    const where = { AND: [search ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { model: { contains: search, mode: 'insensitive' } }, { inventoryNumber: { contains: search, mode: 'insensitive' } }, { serialNumber: { contains: search, mode: 'insensitive' } }] } : {}, status ? { status } : {}, departmentId ? { departmentId: Number(departmentId) } : {}, assetTypeId ? { assetTypeId: Number(assetTypeId) } : {}, assignmentFilter] };
+    const yearSearch = /^\d{4}$/.test(String(search || '')) ? Number(search) : null;
+    const where = { AND: [search ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { model: { contains: search, mode: 'insensitive' } }, { inventoryNumber: { contains: search, mode: 'insensitive' } }, ...(yearSearch ? [{ manufactureYear: yearSearch }] : [])] } : {}, status ? { status } : {}, departmentId ? { departmentId: Number(departmentId) } : {}, organizationId ? { department: { organizationId: Number(organizationId) } } : {}, assetTypeId ? { assetTypeId: Number(assetTypeId) } : {}, assignmentFilter] };
     const skip = (Number(page) - 1) * Number(limit);
     const [items, total] = await Promise.all([prisma.asset.findMany({ where, skip, take: Number(limit), include: { assetType:true, department:true, assignedUser:{ select:{ id:true, fullName:true } } }, orderBy:{ createdAt:'desc' } }), prisma.asset.count({ where })]);
     return { items, total, page: Number(page), limit: Number(limit) };

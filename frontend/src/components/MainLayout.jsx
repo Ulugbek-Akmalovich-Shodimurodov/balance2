@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppstoreOutlined, AuditOutlined, BankOutlined, BellOutlined, DashboardOutlined, FileExcelOutlined, FileProtectOutlined, LaptopOutlined, LogoutOutlined, MenuOutlined, ToolOutlined, UserOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, AuditOutlined, BellOutlined, DashboardOutlined, FileExcelOutlined, FileProtectOutlined, LaptopOutlined, LogoutOutlined, MenuOutlined, ToolOutlined, UserOutlined } from '@ant-design/icons';
 import { Avatar, Badge, Button, Drawer, Dropdown, Layout, Menu, Tooltip, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -15,19 +15,30 @@ export default function MainLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   useEffect(() => { if (user?.id) api.get(`/users/${user.id}`).then((response) => setProfile(response.data)).catch(() => setProfile(user)); }, [user]);
   const signOut = () => { dispatch(logout()); navigate('/login'); };
-  const isAdmin = user?.role === 'ADMIN';
+  const isSuperAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
+  const isOrganizationAdmin = user?.role === 'ORGANIZATION_ADMIN';
+  const isAdmin = isSuperAdmin || isOrganizationAdmin;
   useEffect(() => {
     if (!isAdmin) return undefined;
     const loadRequests = () => api.get('/maintenance').then((response) => setNewRequests(response.data.filter((item) => (item.status || 'NEW') === 'NEW').length)).catch(() => {});
     loadRequests(); const timer = setInterval(loadRequests, 30000);
     return () => clearInterval(timer);
   }, [isAdmin]);
-  const items = isAdmin ? [
-    { key: '/', icon: <DashboardOutlined />, label: 'Boshqaruv paneli' }, { key: '/assets', icon: <LaptopOutlined />, label: 'Aktivlar' },
-    { key: '/users', icon: <UserOutlined />, label: 'Foydalanuvchilar' }, { key: '/departments', icon: <BankOutlined />, label: 'Bo‘limlar' },
+  const items = isSuperAdmin ? [
+    { key: '/', icon: <DashboardOutlined />, label: 'Boshqaruv paneli' }, { key: '/organization', icon: <AppstoreOutlined />, label: 'Tashkilot tuzilmasi' }, { key: '/assets', icon: <LaptopOutlined />, label: 'Aktivlar' },
+    { key: '/users', icon: <UserOutlined />, label: 'Foydalanuvchilar' },
     { key: '/maintenance', icon: <ToolOutlined />, label: <span className="menu-notification">Texnik xizmat <Badge count={newRequests} size="small"/></span> }, { key: '/reports', icon: <FileExcelOutlined />, label: 'Hisobotlar' },
     { key: '/delivery-acts', icon: <FileProtectOutlined />, label: 'Dalolatnomalar' },
     { key: '/audit', icon: <AuditOutlined />, label: 'Audit jurnali' },
+  ] : isOrganizationAdmin ? [
+    { key: '/', icon: <DashboardOutlined />, label: 'Boshqaruv paneli' },
+    { key: '/organization', icon: <AppstoreOutlined />, label: 'Tashkilot tuzilmasi' },
+    { key: '/assets', icon: <LaptopOutlined />, label: 'Aktivlar' },
+    { key: '/users', icon: <UserOutlined />, label: 'Foydalanuvchilar' },
+    { key: '/maintenance', icon: <ToolOutlined />, label: <span className="menu-notification">Texnik xizmat <Badge count={newRequests} size="small"/></span> },
+    { key: '/reports', icon: <FileExcelOutlined />, label: 'Hisobotlar' },
+    { key: '/delivery-acts', icon: <FileProtectOutlined />, label: 'Dalolatnomalar' },
+    { key: `/users/${user?.id}`, icon: <UserOutlined />, label: 'Mening profilim' },
   ] : [
     { key: `/users/${user?.id}`, icon: <UserOutlined />, label: 'Mening profilim' },
     { key: '/assets', icon: <LaptopOutlined />, label: 'Mening qurilmalarim' },

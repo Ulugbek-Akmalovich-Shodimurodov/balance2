@@ -13,5 +13,8 @@ export function errorHandler(err, req, res, next) {
     return res.status(409).json({ message });
   }
   if (err.code === 'P2025') return res.status(404).json({ message: 'Ma\'lumot topilmadi' });
-  res.status(err.statusCode || 500).json({ message: err.message || 'Server xatosi' });
+  res.status(err.statusCode || 500).json({
+    message: err.message || 'Server xatosi',
+    ...(err.details ? { details: err.details } : {}),
+  });
 }

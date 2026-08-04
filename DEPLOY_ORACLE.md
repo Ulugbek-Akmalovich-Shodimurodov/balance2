@@ -24,8 +24,8 @@ Oracle VCN ingress qoidalarida TCP `22`, `80`, `443` portlarini oching. `5000` v
 
 Quyidagi ikkita nomni VM public IPv4 manziliga yo‘naltiring:
 
-- `api-loyiha.duckdns.org`
-- `office-loyiha.duckdns.org`
+- `api.ulugbekakmalovich.uz`
+- `office.ulugbekakmalovich.uz`
 
 DNS yangilanganini tekshirmasdan containerlarni production rejimida ishga tushirmang. Caddy public DNS orqali avtomatik TLS sertifikat oladi.
 
@@ -64,13 +64,13 @@ Birinchisini `JWT_SECRET`, ikkinchisini `ONLYOFFICE_JWT_SECRET` sifatida `produc
 `production.env` ichida quyidagilar real qiymat bilan to‘ldiriladi:
 
 ```env
-API_DOMAIN=api-loyiha.duckdns.org
-OFFICE_DOMAIN=office-loyiha.duckdns.org
+API_DOMAIN=api.ulugbekakmalovich.uz
+OFFICE_DOMAIN=office.ulugbekakmalovich.uz
 DATABASE_URL=postgresql://...
 JWT_SECRET=...
 JWT_EXPIRES_IN=1d
 CLIENT_URL=https://frontend.vercel.app
-ONLYOFFICE_PUBLIC_URL=https://office-loyiha.duckdns.org
+ONLYOFFICE_PUBLIC_URL=https://office.ulugbekakmalovich.uz
 ONLYOFFICE_JWT_SECRET=...
 ```
 
@@ -88,8 +88,8 @@ Backend container ishga tushayotganda `prisma migrate deploy` avtomatik bajarila
 ## 8. Healthcheck
 
 ```bash
-curl -fsS "https://api-loyiha.duckdns.org/health"
-curl -fsS "https://office-loyiha.duckdns.org/healthcheck"
+curl -fsS "https://api.ulugbekakmalovich.uz/health"
+curl -fsS "https://office.ulugbekakmalovich.uz/healthcheck"
 ```
 
 Kutilgan javoblar:
@@ -102,7 +102,7 @@ Kutilgan javoblar:
 Frontend Vercel project environment:
 
 ```env
-VITE_API_URL=https://api-loyiha.duckdns.org/api
+VITE_API_URL=https://api.ulugbekakmalovich.uz/api
 ```
 
 Frontend deploy bo‘lgach uning aniq URL qiymatini Oracle serveridagi `CLIENT_URL` ga yozing va backendni qayta yarating:
